@@ -189,18 +189,18 @@ type AuditResult struct {
 - **数据源**:审核态 `POST /openapi/v1/publish/get-audit-result`(需 `appId` + `releaseId`,`releaseId` 仅「经 apkgo 上传过」的版本才有);无 releaseId 时退化到 `GET /openapi/v1/publish/get-app-detail` 仅拿线上版本。现有实现 `honor.go:60-158`。
 - **review**:保持现有映射不动(0→reviewing、1→approved、2→rejected、3/4→unknown)。荣耀无「整改」态 → 不产 `needs_fix`。
 - **listing**(新增):荣耀**无可靠上下架接口**(`get-app-current-release.releaseStatus` 未使用且注释判定不可靠)→ 恒为 `ListingUnknown` + detail「荣耀无上下架查询接口」。
-- **approved_first**:`get-app-detail` 返回的 `releaseInfo` 为空 / 无线上版本,且审核态为 approved(有 releaseId 时)→ best-effort `approved_first`;否则 `approved`。
+- **approved_first**:**不产**。荣耀 audit 是两条互斥路径 —— Path A(有 releaseId)调 `get-audit-result` 只拿到 State、无版本信息;Path B(无 releaseId)调 `get-app-detail` 只拿版本、无 State。判定 `approved_first`(通过 且 无在架版本)需要在 Path A 通过后**额外加调一次 `get-app-detail`**,违反「零新增 API 调用」约束。裁定(2026-07-08):荣耀 review 保持粗粒度(reviewing/approved/rejected),不区分首次上架。
 
 ### 7.7 汇总:各店可达精度
 
 | 渠道 | listing | review 细度 | approved_first | needs_fix |
 |---|---|---|---|---|
 | 华为 | 精确(releaseState) | 全 | ✅ onShelfVersionCode==0 | ✅ releaseState=9 |
-| OPPO | 关键词(上线/下架) | 中 | best-effort/unknown | ✅ 关键词「整改」 |
-| vivo | online-state 字段(待核) | 5 态 | 退回 approved/unknown | ❌ 无此态 |
-| 小米 | 在架 / 未上架(识别不了下架) | reviewing/approved | best-effort | ❌ |
+| OPPO | 关键词(上线/下架) | 中 | ❌ 退回 approved(无在架历史字段) | ✅ 关键词「整改」 |
+| vivo | online-state 字段(待核) | 5 态 | ❌ 退回 approved(无在架历史字段) | ❌ 无此态 |
+| 小米 | 在架 / 未上架(识别不了下架) | reviewing/approved | ❌ 退回 approved(稳态无法判首次) | ❌ |
 | 应用宝 | 未上架推断(识别不了下架) | 5 态 | ✅ 靠 LiveVersion 抓取为空 | ❌ |
-| 荣耀 | unknown(无接口) | 需 releaseId,3 态 | best-effort(get-app-detail) | ❌ |
+| 荣耀 | unknown(无接口) | 需 releaseId,3 态 | ❌ 不产(避免额外调用,见 §7.6) | ❌ |
 
 ## 8. 命令与输出
 
@@ -266,9 +266,9 @@ honor    ❔ 未知     ✅ approved (releaseId=...)
 | `pkg/store/huawei/huawei.go` | listing 映射 + approved_first/needs_fix 叠加 |
 | `pkg/store/oppo/oppo.go` | listing 关键词 + needs_fix 关键词(可选:数字码表) |
 | `pkg/store/vivo/vivo.go` | 解码 online-state → listing(待核) |
-| `pkg/store/xiaomi/xiaomi.go` | listing 推断(在架/未上架)+ approved_first best-effort |
+| `pkg/store/xiaomi/xiaomi.go` | listing 推断(在架/未上架);review 不变,不产 approved_first |
 | `pkg/store/tencent/tencent.go` | listing 推断 + approved_first |
-| `pkg/store/honor/honor.go` | listing 恒 unknown + approved_first best-effort |
+| `pkg/store/honor/honor.go` | listing 恒 unknown;review 不变,不产 approved_first(见 §7.6) |
 | `cmd/audit.go` | `listingGlyph` + text 新列 + `auditGlyph` 补新值图标 |
 | 各 `*_test.go` | listing / 新 review 值的 table-driven 测试 |
 | `pkg/apkgo/audit.go` | 无需改结构(内嵌自动获得 Listing) |
