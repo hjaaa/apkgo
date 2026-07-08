@@ -9,13 +9,19 @@ import (
 // TestAuditStateResolved locks in which states `apkgo audit --watch`
 // treats as terminal (stop polling) vs still-in-flight.
 func TestAuditStateResolved(t *testing.T) {
-	resolved := []store.AuditState{store.AuditApproved, store.AuditRejected, store.AuditWithdrawn}
+	resolved := []store.AuditState{
+		store.AuditApproved, store.AuditRejected, store.AuditWithdrawn,
+		store.AuditApprovedFirst, // 首次上架通过属终态
+	}
 	for _, s := range resolved {
 		if !s.Resolved() {
 			t.Errorf("%q.Resolved() = false, want true", s)
 		}
 	}
-	pending := []store.AuditState{store.AuditReviewing, store.AuditUnknown, store.AuditState("")}
+	pending := []store.AuditState{
+		store.AuditReviewing, store.AuditUnknown, store.AuditState(""),
+		store.AuditNeedsFix, // 待整改仍需继续轮询
+	}
 	for _, s := range pending {
 		if s.Resolved() {
 			t.Errorf("%q.Resolved() = true, want false", s)
