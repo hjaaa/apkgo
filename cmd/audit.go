@@ -37,8 +37,10 @@ configured store — decoupled from upload. Upload now finishes at
 "submitted (审核中)"; this command polls how the review is going.
 
 Pass -f <apk> or -p <package>. With --watch it polls every --interval
-until every store reaches a terminal state (approved / rejected /
-withdrawn) or the global --timeout elapses.`,
+until every store reaches a terminal state (approved / approved_first /
+rejected / withdrawn) or the global --timeout elapses. Unified review
+states: reviewing, approved, approved_first, needs_fix, rejected,
+withdrawn, unknown. Note: approved_first is terminal; needs_fix is not.`,
 	Example: `  apkgo audit -p com.example.app
   apkgo audit -f app.apk -s tencent,huawei
   apkgo audit -p com.example.app --watch --interval 1m -t 1h`,

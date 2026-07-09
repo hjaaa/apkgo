@@ -13,6 +13,7 @@ func TestMapHuaweiReleaseState(t *testing.T) {
 	cases := map[int]store.AuditState{
 		4: store.AuditReviewing, 5: store.AuditReviewing, 12: store.AuditReviewing,
 		0: store.AuditApproved, 3: store.AuditApproved,
+		9: store.AuditNeedsFix,
 		1: store.AuditRejected, 8: store.AuditRejected, 13: store.AuditRejected,
 		2: store.AuditWithdrawn, 10: store.AuditWithdrawn, 11: store.AuditWithdrawn,
 		7: store.AuditUnknown, 99: store.AuditUnknown,
