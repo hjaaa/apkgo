@@ -59,6 +59,7 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 		return res
 	}
 	res.State, res.Detail = mapOppoAudit(app.AuditStatusName, app.RefuseReason)
+	res.Listing = oppoListing(app.AuditStatusName)
 	res.VersionName = app.VersionName
 	if vc, err := strconv.ParseInt(strings.TrimSpace(app.VersionCode), 10, 32); err == nil {
 		res.VersionCode = int32(vc)
@@ -73,6 +74,8 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 // surfaced in Detail so the operator sees ground truth regardless.
 func mapOppoAudit(name, refuse string) (store.AuditState, string) {
 	switch {
+	case containsAny(name, "整改"):
+		return store.AuditNeedsFix, name
 	case containsAny(name, "拒绝", "不通过", "驳回", "失败", "打回"):
 		if refuse != "" {
 			return store.AuditRejected, name + ": " + refuse
@@ -88,6 +91,19 @@ func mapOppoAudit(name, refuse string) (store.AuditState, string) {
 		return store.AuditUnknown, "no audit status returned"
 	default:
 		return store.AuditUnknown, name
+	}
+}
+
+// oppoListing 从 app/info 的 audit_status_name 关键词推导上下架状态。
+// OPPO 未公开稳定数字码表，因此这里只做保守的关键词软匹配。
+func oppoListing(name string) store.ListingState {
+	switch {
+	case containsAny(name, "上线", "上架", "已发布", "在架"):
+		return store.ListingOnShelf
+	case containsAny(name, "下架", "冻结", "撤销"):
+		return store.ListingOffShelf
+	default:
+		return store.ListingUnknown
 	}
 }
 
