@@ -26,32 +26,11 @@ Upload finishes at **submitted (审核中)** — it does not block waiting for t
 review outcome (tencent's old in-upload audit poll was removed). Poll review
 progress separately with `apkgo audit -p <package>` (or `-f <apk>`), which runs
 on its own context like `doctor`. `--watch [--interval 30s]` loops until every
-store reaches a terminal state (approved / approved_first / rejected /
-withdrawn) or the global `-t` timeout. Each store's status is normalised to a
-unified `state` set:
-`reviewing`, `approved`, `approved_first`, `needs_fix`, `rejected`,
-`withdrawn`, `unknown`.
-`approved_first` means the review passed and that store can be judged to have
-first-time shelf / no existing on-shelf version signals, so it is terminal
-like `approved`; `needs_fix` means the store explicitly exposed a "整改"
-style state and remains non-terminal for `--watch`. Supported: **tencent,
-huawei, honor, vivo, oppo, samsung, xiaomi** (stores with a review-status API
-or Xiaomi version inference; others report "audit not supported").
-
-`apkgo audit` also reports a separate `listing` dimension for whether the app
-is on shelf. `listing` is orthogonal to `state`: `on_shelf` (在架),
-`off_shelf` (下架), `not_listed` (未上架), `unknown`. The text renderer shows
-this as a leading column before the review state; JSON output already includes
-the `listing` field through `AuditStoreResult`.
-Listing precision varies by store: Huawei can identify listing precisely;
-OPPO infers it from keywords; Xiaomi can only distinguish on-shelf vs
-not-listed and cannot recognize off-shelf; Tencent uses its public detail page
-as a best-effort signal, so scrape failures degrade to `unknown` rather than
-inventing `not_listed`; Honor has no listing API and is reported as `unknown`;
-vivo is treated conservatively and depends on whether the available fields can
-be verified.
-
-Tencent only emits `approved_first` when `listing=not_listed`.
+store reaches a terminal state (approved / rejected / withdrawn) or the global
+`-t` timeout. Each store's status is normalised to a unified `state`
+(reviewing / approved / rejected / withdrawn / unknown) with the raw label in
+`detail`. Supported: **tencent, huawei, honor, vivo, oppo, samsung** (stores
+with a review-status API; others report "audit not supported").
 
 ## Upload flags
 
