@@ -98,6 +98,10 @@ func mapOppoAudit(name, refuse string) (store.AuditState, string) {
 // OPPO 未公开稳定数字码表，因此这里只做保守的关键词软匹配。
 func oppoListing(name string) store.ListingState {
 	switch {
+	// 待上架 / 上架审核中 等待上架类标签本身含「上架」子串，但应用尚未在架，
+	// 必须先于下面的「上架」宽匹配拦截，否则会把待发布状态误判为 on_shelf。
+	case containsAny(name, "待上架", "上架审核"):
+		return store.ListingUnknown
 	case containsAny(name, "上线", "上架", "已发布", "在架"):
 		return store.ListingOnShelf
 	case containsAny(name, "下架", "冻结", "撤销"):
