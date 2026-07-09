@@ -3,6 +3,8 @@ package tencent
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/KevinGong2013/apkgo/v3/pkg/store"
 )
 
 // nextDataFixture mirrors the shape of 应用宝's __NEXT_DATA__ blob: the props
@@ -51,5 +53,26 @@ func TestNextDataRe(t *testing.T) {
 	}
 	if m[1] != `{"a":1}` {
 		t.Errorf("captured %q, want %q", m[1], `{"a":1}`)
+	}
+}
+
+func TestTencentListing(t *testing.T) {
+	if got := tencentListing("1.2.0"); got != store.ListingOnShelf {
+		t.Errorf("tencentListing(non-empty) = %q, want on_shelf", got)
+	}
+	if got := tencentListing(""); got != store.ListingNotListed {
+		t.Errorf("tencentListing(empty) = %q, want not_listed", got)
+	}
+}
+
+func TestApplyTencentFirstListing(t *testing.T) {
+	if got := applyTencentFirstListing(store.AuditApproved, ""); got != store.AuditApprovedFirst {
+		t.Errorf("apply(approved, empty) = %q, want approved_first", got)
+	}
+	if got := applyTencentFirstListing(store.AuditApproved, "1.2.0"); got != store.AuditApproved {
+		t.Errorf("apply(approved, live) = %q, want approved", got)
+	}
+	if got := applyTencentFirstListing(store.AuditReviewing, ""); got != store.AuditReviewing {
+		t.Errorf("apply(reviewing, empty) = %q, want reviewing", got)
 	}
 }

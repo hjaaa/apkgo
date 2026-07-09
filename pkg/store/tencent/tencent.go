@@ -398,7 +398,26 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 	if live, ok := liveVersionFromStorePage(ctx, pkg); ok {
 		res.LiveVersionName = live
 	}
+	res.Listing = tencentListing(res.LiveVersionName)
+	res.State = applyTencentFirstListing(res.State, res.LiveVersionName)
 	return res
+}
+
+// tencentListing 由公开详情页是否抓到在架版本推断上下架:抓到→on_shelf,
+// 抓不到→not_listed。应用宝无上下架接口,无法识别"下架"。
+func tencentListing(liveVersion string) store.ListingState {
+	if liveVersion != "" {
+		return store.ListingOnShelf
+	}
+	return store.ListingNotListed
+}
+
+// applyTencentFirstListing 把"审核通过且无在架版本"细化为首次上架通过。
+func applyTencentFirstListing(state store.AuditState, liveVersion string) store.AuditState {
+	if state == store.AuditApproved && liveVersion == "" {
+		return store.AuditApprovedFirst
+	}
+	return state
 }
 
 // storePageBaseURL is the public (unauthenticated) 应用宝 web detail page,
