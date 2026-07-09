@@ -394,11 +394,38 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 	res.Detail = detail
 	// The open-API audit endpoint returns no version, so best-effort scrape
 	// the public 应用宝 detail page for the currently-live version name. Any
-	// failure leaves LiveVersionName empty — it never fails the audit.
-	if live, ok := liveVersionFromStorePage(ctx, pkg); ok {
+	// failure only degrades listing precision to unknown — it never invents
+	// "not listed" or mutates the authoritative review state from the open API.
+	live, listing := liveVersionFromStorePage(ctx, pkg)
+	if live != "" {
 		res.LiveVersionName = live
 	}
+	res.Listing = listing
+	res.State = applyTencentFirstListing(res.State, listing)
 	return res
+}
+
+// tencentListing maps the public-page probe into the listing dimension:
+// a live version means on-shelf; a parsed record without one means the app
+// is confirmed not yet listed; scrape failures stay unknown.
+func tencentListing(liveVersion string, found bool) store.ListingState {
+	if liveVersion != "" {
+		return store.ListingOnShelf
+	}
+	if found {
+		return store.ListingNotListed
+	}
+	return store.ListingUnknown
+}
+
+// applyTencentFirstListing only refines approved -> approved_first once the
+// public page confirms the app is not yet listed. Unknown listing data keeps
+// the original review state untouched.
+func applyTencentFirstListing(state store.AuditState, listing store.ListingState) store.AuditState {
+	if state == store.AuditApproved && listing == store.ListingNotListed {
+		return store.AuditApprovedFirst
+	}
+	return state
 }
 
 // storePageBaseURL is the public (unauthenticated) 应用宝 web detail page,
@@ -413,42 +440,74 @@ var storePageClient = &http.Client{Timeout: 15 * time.Second}
 
 var nextDataRe = regexp.MustCompile(`(?s)<script id="__NEXT_DATA__"[^>]*>(.*?)</script>`)
 
-// liveVersionFromStorePage best-effort extracts the live version_name for pkg
-// from the public 应用宝 detail page. Returns ("", false) on any failure
-// (network, non-200, markup change, package absent) so the caller can leave
-// LiveVersionName empty rather than surfacing an error — the audit state from
-// the open API is authoritative and must not be lost to a scrape hiccup.
-func liveVersionFromStorePage(ctx context.Context, pkg string) (string, bool) {
+// liveVersionFromStorePage best-effort probes the public 应用宝 detail page.
+// It returns the live version plus a listing state:
+//   - on_shelf: page parsed and target package has a non-empty version_name
+//   - not_listed: page parsed and target package exists but version_name empty
+//   - unknown: any scrape failure or unverifiable markup
+//
+// The signed audit API remains authoritative for review state; this probe only
+// enriches the orthogonal listing dimension.
+func liveVersionFromStorePage(ctx context.Context, pkg string) (string, store.ListingState) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, storePageBaseURL+url.PathEscape(pkg), nil)
 	if err != nil {
-		return "", false
+		return "", store.ListingUnknown
 	}
 	// A real-browser UA: the page is server-rendered and a blank UA can be served a stub.
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
 	httpResp, err := storePageClient.Do(req)
 	if err != nil {
-		return "", false
+		return "", store.ListingUnknown
 	}
 	defer httpResp.Body.Close()
 	if httpResp.StatusCode != http.StatusOK {
-		return "", false
+		return "", store.ListingUnknown
 	}
 	body, err := io.ReadAll(io.LimitReader(httpResp.Body, 8<<20)) // cap at 8 MiB
 	if err != nil {
-		return "", false
+		return "", store.ListingUnknown
 	}
 	m := nextDataRe.FindSubmatch(body)
 	if m == nil {
-		return "", false
+		return "", store.ListingUnknown
 	}
 	var data any
 	if err := json.Unmarshal(m[1], &data); err != nil {
-		return "", false
+		return "", store.ListingUnknown
 	}
-	if v := findVersionName(data, pkg); v != "" {
-		return v, true
+	v, found := findPackageVersion(data, pkg)
+	return v, tencentListing(v, found)
+}
+
+func findPackageVersion(node any, pkg string) (version string, found bool) {
+	switch n := node.(type) {
+	case map[string]any:
+		if p, _ := n["pkg_name"].(string); p == pkg {
+			v, _ := n["version_name"].(string)
+			if v != "" {
+				return v, true
+			}
+			found = true
+		}
+		for _, v := range n {
+			if got, ok := findPackageVersion(v, pkg); ok {
+				if got != "" {
+					return got, true
+				}
+				found = true
+			}
+		}
+	case []any:
+		for _, v := range n {
+			if got, ok := findPackageVersion(v, pkg); ok {
+				if got != "" {
+					return got, true
+				}
+				found = true
+			}
+		}
 	}
-	return "", false
+	return "", found
 }
 
 // findVersionName walks the decoded __NEXT_DATA__ tree for the object whose
@@ -456,24 +515,8 @@ func liveVersionFromStorePage(ctx context.Context, pkg string) (string, bool) {
 // records (recommendations, similar apps); only the one for pkg carries the
 // version we want, and a stub reference with an empty version_name is skipped.
 func findVersionName(node any, pkg string) string {
-	switch n := node.(type) {
-	case map[string]any:
-		if p, _ := n["pkg_name"].(string); p == pkg {
-			if v, _ := n["version_name"].(string); v != "" {
-				return v
-			}
-		}
-		for _, v := range n {
-			if got := findVersionName(v, pkg); got != "" {
-				return got
-			}
-		}
-	case []any:
-		for _, v := range n {
-			if got := findVersionName(v, pkg); got != "" {
-				return got
-			}
-		}
+	if v, found := findPackageVersion(node, pkg); found && v != "" {
+		return v
 	}
 	return ""
 }

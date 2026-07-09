@@ -100,7 +100,8 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 	if af.ReleaseState == 0 && af.VersionNumber == "" && af.OnShelfVersionNumber == "" {
 		af = resp.appInfoFields
 	}
-	res.State, res.Detail = mapHuaweiReleaseState(af.ReleaseState)
+	res.State, res.Detail = reviewFromReleaseState(af.ReleaseState, af.OnShelfVersionCode)
+	res.Listing = mapHuaweiListing(af.ReleaseState, af.OnShelfVersionCode)
 	res.VersionName = af.VersionNumber
 	res.VersionCode = int32(af.VersionCode)
 	res.LiveVersionName = af.OnShelfVersionNumber
@@ -122,10 +123,43 @@ func mapHuaweiReleaseState(state int) (store.AuditState, string) {
 		return store.AuditRejected, fmt.Sprintf("releaseState=%d", state)
 	case 2, 10, 11:
 		return store.AuditWithdrawn, fmt.Sprintf("releaseState=%d", state)
+	case 9:
+		return store.AuditNeedsFix, "下架审核不通过(releaseState=9)"
 	case 7:
 		return store.AuditUnknown, "draft (草稿)"
 	default:
 		return store.AuditUnknown, fmt.Sprintf("releaseState=%d", state)
+	}
+}
+
+// reviewFromReleaseState refines "approved" into "approved_first" when Huawei
+// reports the app as approved / pending publish without any live version yet.
+func reviewFromReleaseState(state int, onShelfVersionCode int64) (store.AuditState, string) {
+	st, detail := mapHuaweiReleaseState(state)
+	if st == store.AuditApproved && onShelfVersionCode == 0 {
+		st = store.AuditApprovedFirst
+	}
+	return st, detail
+}
+
+// mapHuaweiListing maps releaseState into the orthogonal listing dimension.
+// During review states, a live version means an update is under review while
+// the old version remains listed.
+func mapHuaweiListing(state int, onShelfVersionCode int64) store.ListingState {
+	switch state {
+	case 0:
+		return store.ListingOnShelf
+	case 2, 6, 9, 10, 11:
+		return store.ListingOffShelf
+	case 1, 3, 7, 13:
+		return store.ListingNotListed
+	case 4, 5, 8, 12:
+		if onShelfVersionCode > 0 {
+			return store.ListingOnShelf
+		}
+		return store.ListingNotListed
+	default:
+		return store.ListingUnknown
 	}
 }
 

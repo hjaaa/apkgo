@@ -13,13 +13,30 @@ const (
 	AuditRejected  AuditState = "rejected"  // 审核驳回 — not approved
 	AuditWithdrawn AuditState = "withdrawn" // 已撤回 — submission cancelled
 	AuditUnknown   AuditState = "unknown"   // store returned a state we don't map
+	// AuditApprovedFirst 审核通过-首次上架:通过/待发布 且 该应用尚无在架版本
+	// (live version is empty). 用于把“首次上架通过”与“更新通过”区分开。
+	AuditApprovedFirst AuditState = "approved_first"
+	// AuditNeedsFix 待整改:仅在渠道原始标签/状态确实暴露“整改”语义时点亮。
+	AuditNeedsFix AuditState = "needs_fix"
 )
 
 // Resolved reports whether the review has finished (terminal state).
 // `apkgo audit --watch` stops polling once every store is Resolved.
 func (s AuditState) Resolved() bool {
-	return s == AuditApproved || s == AuditRejected || s == AuditWithdrawn
+	return s == AuditApproved || s == AuditApprovedFirst ||
+		s == AuditRejected || s == AuditWithdrawn
 }
+
+// ListingState is the visibility state of an app on a store, orthogonal to
+// the review workflow state.
+type ListingState string
+
+const (
+	ListingOnShelf   ListingState = "on_shelf"
+	ListingOffShelf  ListingState = "off_shelf"
+	ListingNotListed ListingState = "not_listed"
+	ListingUnknown   ListingState = "unknown"
+)
 
 // AuditQuery identifies the app/version whose review status to look up.
 // VersionName/VersionCode are best-effort hints; most stores key off the
@@ -40,10 +57,11 @@ type AuditQuery struct {
 // itself failed (auth / network / not-found); State is meaningful only
 // when Error is empty.
 type AuditResult struct {
-	Store  string     `json:"store"`
-	State  AuditState `json:"state,omitempty"`
-	Detail string     `json:"detail,omitempty"`
-	Error  string     `json:"error,omitempty"`
+	Store   string       `json:"store"`
+	State   AuditState   `json:"state,omitempty"`
+	Listing ListingState `json:"listing,omitempty"`
+	Detail  string       `json:"detail,omitempty"`
+	Error   string       `json:"error,omitempty"`
 
 	// VersionName/VersionCode identify the version the State refers to —
 	// the latest submitted/under-review iteration the store reports. They

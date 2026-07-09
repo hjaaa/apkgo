@@ -63,6 +63,7 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 		return res
 	}
 	res.State, res.Detail = mapVivoAuditState(int(app.Status))
+	res.Listing = store.ListingUnknown // vivo online-state field/value is unverified; degrade safely.
 	res.VersionName = app.VersionName
 	if vc, err := strconv.ParseInt(strings.TrimSpace(app.VersionCode), 10, 32); err == nil {
 		res.VersionCode = int32(vc)
@@ -87,6 +88,12 @@ func mapVivoAuditState(status int) (store.AuditState, string) {
 	default:
 		return store.AuditUnknown, fmt.Sprintf("status=%d", status)
 	}
+}
+
+// vivoListing maps vivo's app.query.details online-state to a unified listing state.
+// The source field/value is still unverified, so every input degrades to unknown.
+func vivoListing(onlineState int) store.ListingState {
+	return store.ListingUnknown
 }
 
 type Store struct {

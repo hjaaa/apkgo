@@ -72,6 +72,7 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 			return res
 		}
 	}
+	res.Listing = store.ListingUnknown
 	if q.ExternalID != "" {
 		auditByRelease(ctx, s, appID, q.ExternalID, &res)
 		return res

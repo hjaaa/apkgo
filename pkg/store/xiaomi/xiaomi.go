@@ -75,6 +75,7 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 		res.Error = err.Error()
 		return res
 	}
+	res.Listing = xiaomiListing(info != nil)
 	const inferred = "小米无审核状态接口，依据版本推断"
 	if info == nil {
 		// Never uploaded under this account: a submitted version we know about
@@ -103,6 +104,15 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 		res.VersionName, res.VersionCode = info.VersionName, int32(info.VersionCode)
 	}
 	return res
+}
+
+// xiaomiListing 由 /dev/query 是否返回 packageInfo 推断上下架:有在架版本→
+// on_shelf,账号下无此包→not_listed。小米无法识别"下架"(见 spec §10.5)。
+func xiaomiListing(listed bool) store.ListingState {
+	if listed {
+		return store.ListingOnShelf
+	}
+	return store.ListingNotListed
 }
 
 type Store struct {
