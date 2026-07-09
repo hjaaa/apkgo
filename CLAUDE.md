@@ -32,6 +32,12 @@ store reaches a terminal state (approved / rejected / withdrawn) or the global
 `detail`. Supported: **tencent, huawei, honor, vivo, oppo, samsung** (stores
 with a review-status API; others report "audit not supported").
 
+`apkgo audit` also reports a separate `listing` dimension for whether the app
+is on shelf. `listing` is orthogonal to `state`: `on_shelf` (在架),
+`off_shelf` (下架), `not_listed` (未上架), `unknown`. The text renderer shows
+this as a leading column before the review state; JSON output already includes
+the `listing` field through `AuditStoreResult`.
+
 ## Upload flags
 
 ```

@@ -150,7 +150,14 @@ func auditOneLiner(r apkgo.AuditStoreResult, tty bool) string {
 	if r.Detail != "" {
 		line += " (" + r.Detail + ")"
 	}
-	return colorize(code, tty, line)
+	review := colorize(code, tty, line)
+	if r.Listing != "" {
+		licon, lcode := listingGlyph(string(r.Listing))
+		if licon != "" {
+			return colorize(lcode, tty, licon) + "  " + review
+		}
+	}
+	return review
 }
 
 // auditGlyph maps a unified AuditState string to an icon + ANSI colour.
@@ -164,8 +171,29 @@ func auditGlyph(state string) (icon, color string) {
 		return "↩", "33"
 	case "reviewing":
 		return "⏳", "33"
+	case "approved_first":
+		return "🎉", "32"
+	case "needs_fix":
+		return "🛠", "33"
 	default:
 		return "•", ""
+	}
+}
+
+// listingGlyph maps a ListingState string to an icon + ANSI colour for the
+// text renderer's leading 上下架 column.
+func listingGlyph(state string) (icon, color string) {
+	switch state {
+	case "on_shelf":
+		return "🟢在架", "32"
+	case "off_shelf":
+		return "🔴下架", "31"
+	case "not_listed":
+		return "⚪未上架", ""
+	case "unknown":
+		return "❔未知", ""
+	default:
+		return "", ""
 	}
 }
 
