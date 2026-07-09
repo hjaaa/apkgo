@@ -24,6 +24,55 @@ func TestMapHuaweiReleaseState(t *testing.T) {
 	}
 }
 
+func TestMapHuaweiListing(t *testing.T) {
+	cases := []struct {
+		state   int
+		onShelf int64
+		want    store.ListingState
+	}{
+		{0, 100, store.ListingOnShelf},
+		{2, 100, store.ListingOffShelf},
+		{6, 100, store.ListingOffShelf},
+		{9, 100, store.ListingOffShelf},
+		{10, 100, store.ListingOffShelf},
+		{11, 100, store.ListingOffShelf},
+		{7, 0, store.ListingNotListed},
+		{1, 0, store.ListingNotListed},
+		{13, 0, store.ListingNotListed},
+		{3, 0, store.ListingNotListed},
+		{4, 100, store.ListingOnShelf},
+		{4, 0, store.ListingNotListed},
+		{5, 100, store.ListingOnShelf},
+		{8, 100, store.ListingOnShelf},
+		{99, 0, store.ListingUnknown},
+	}
+	for _, tc := range cases {
+		if got := mapHuaweiListing(tc.state, tc.onShelf); got != tc.want {
+			t.Errorf("mapHuaweiListing(%d, %d) = %q, want %q", tc.state, tc.onShelf, got, tc.want)
+		}
+	}
+}
+
+func TestReviewFromReleaseState(t *testing.T) {
+	cases := []struct {
+		state   int
+		onShelf int64
+		want    store.AuditState
+	}{
+		{0, 0, store.AuditApprovedFirst},
+		{3, 0, store.AuditApprovedFirst},
+		{0, 120, store.AuditApproved},
+		{4, 0, store.AuditReviewing},
+		{9, 0, store.AuditNeedsFix},
+		{1, 0, store.AuditRejected},
+	}
+	for _, tc := range cases {
+		if got, _ := reviewFromReleaseState(tc.state, tc.onShelf); got != tc.want {
+			t.Errorf("reviewFromReleaseState(%d, %d) = %q, want %q", tc.state, tc.onShelf, got, tc.want)
+		}
+	}
+}
+
 // TestClassifyHuawei locks in the "app's packages exceeds the upper limit"
 // classification from https://github.com/KevinGong2013/apkgo/issues/31 —
 // an AGC-side draft-version package cap, not an apkgo bug, so it must map
