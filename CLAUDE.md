@@ -31,13 +31,12 @@ withdrawn) or the global `-t` timeout. Each store's status is normalised to a
 unified `state` set:
 `reviewing`, `approved`, `approved_first`, `needs_fix`, `rejected`,
 `withdrawn`, `unknown`.
-`approved_first` means the review passed but the app is still confirmed
-`not_listed` on that store, so it is terminal like `approved`; `needs_fix`
-means the store explicitly exposed a "整改" style state and remains
-non-terminal for `--watch`. Supported: **tencent, huawei, honor, vivo, oppo,
-samsung, xiaomi** (stores with a review-status API or Xiaomi version
-inference; others report "audit not
-supported").
+`approved_first` means the review passed and that store can be judged to have
+first-time shelf / no existing on-shelf version signals, so it is terminal
+like `approved`; `needs_fix` means the store explicitly exposed a "整改"
+style state and remains non-terminal for `--watch`. Supported: **tencent,
+huawei, honor, vivo, oppo, samsung, xiaomi** (stores with a review-status API
+or Xiaomi version inference; others report "audit not supported").
 
 `apkgo audit` also reports a separate `listing` dimension for whether the app
 is on shelf. `listing` is orthogonal to `state`: `on_shelf` (在架),
@@ -51,6 +50,8 @@ as a best-effort signal, so scrape failures degrade to `unknown` rather than
 inventing `not_listed`; Honor has no listing API and is reported as `unknown`;
 vivo is treated conservatively and depends on whether the available fields can
 be verified.
+
+Tencent only emits `approved_first` when `listing=not_listed`.
 
 ## Upload flags
 

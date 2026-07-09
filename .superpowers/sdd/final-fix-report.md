@@ -117,3 +117,14 @@ GOCACHE=/private/tmp/apkgo-gocache GOMODCACHE=/private/tmp/apkgo-gomodcache go t
 - `go test ./pkg/store/tencent/`：通过
 - `go build ./...`：通过
 - `go test ./...`：失败，但仅有已知基线失败 `pkg/apkgo TestDiagnose_RealProbe`（`doctor_test.go:65 expected AnyFailed=true with bogus api_key`）
+
+## 2026-07-09 CLAUDE.md 契约对齐
+
+### 本轮问题
+
+`CLAUDE.md` 里 `approved_first` 的定义过于收窄，写成了“审核通过但该店仍确认 `not_listed`”，和当前实现/计划允许的 `approved_first` 与 `on_shelf` / `not_listed` 组合不一致。
+
+### 修复内容
+
+- 将 `approved_first` 定义改为更通用的“审核通过且该店可判断为首次上架 / 无既有在架版本信号”
+- 单独补充腾讯仅在 `listing=not_listed` 时触发 `approved_first`
