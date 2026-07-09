@@ -18,3 +18,8 @@
 
 ## Notes
 - I did not modify tests because the task scope restricted file changes to `cmd/audit.go` and `CLAUDE.md`.
+
+## Doc Fix Addendum
+- Updated `CLAUDE.md` to add the store-specific `listing` precision note: Huawei precise, OPPO keyword-based, Xiaomi/Tencent on-shelf vs not-listed only and no off-shelf recognition, Honor `unknown`, vivo conservative / field-dependent.
+- Verification: `git diff -- CLAUDE.md` showed only the intended documentation hunk.
+- Verification: `GOCACHE=/private/tmp/apkgo-gocache GOMODCACHE=/private/tmp/apkgo-gomodcache go build ./...` passed.

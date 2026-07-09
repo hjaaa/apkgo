@@ -37,6 +37,11 @@ is on shelf. `listing` is orthogonal to `state`: `on_shelf` (在架),
 `off_shelf` (下架), `not_listed` (未上架), `unknown`. The text renderer shows
 this as a leading column before the review state; JSON output already includes
 the `listing` field through `AuditStoreResult`.
+Listing precision varies by store: Huawei can identify listing precisely;
+OPPO infers it from keywords; Xiaomi and Tencent can only distinguish on-shelf
+vs not-listed and cannot recognize off-shelf; Honor has no listing API and is
+reported as `unknown`; vivo is treated conservatively and depends on whether
+the available fields can be verified.
 
 ## Upload flags
 
