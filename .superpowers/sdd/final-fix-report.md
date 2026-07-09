@@ -75,3 +75,45 @@ GOCACHE=/private/tmp/apkgo-gocache GOMODCACHE=/private/tmp/apkgo-gomodcache go t
 
 - 未触碰未跟踪的 `.cache/` 与根 `AGENTS.md`。
 - 仅修改允许文件列表中的文件。
+
+## 2026-07-09 最终复审修复追加
+
+### 本轮问题
+
+1. `pkg/store/tencent/tencent.go:findPackageVersion` 命中首个同包名节点就返回，前置空 `version_name` stub 会吞掉后续真实版本。
+2. `CLAUDE.md` 的 audit supported 描述遗漏了本分支已支持的小米。
+
+### TDD 记录
+
+先新增回归测试 `TestFindVersionNamePrefersNonEmptyVersionName`，仅修改测试后执行：
+
+```bash
+GOCACHE=/private/tmp/apkgo-gocache GOMODCACHE=/private/tmp/apkgo-gomodcache go test ./pkg/store/tencent -run TestFindVersionName -count=50
+```
+
+结果：RED，失败符合预期：
+
+- `TestFindVersionNamePrefersNonEmptyVersionName: got "", want "10.12.2"`
+- 原有 `TestFindVersionName` 也因 map 遍历顺序出现同类失败，证明现有实现确有不稳定缺陷。
+
+### 最小修复
+
+- `findPackageVersion` 改为遍历整棵树时优先返回非空 `version_name`
+- 若只命中空版本节点，则在完整遍历后返回 `("", true)`，保留 `not_listed` 语义但不抢先返回
+- `CLAUDE.md` audit supported 文案补入 `xiaomi`
+
+### 本轮验证
+
+```bash
+GOCACHE=/private/tmp/apkgo-gocache GOMODCACHE=/private/tmp/apkgo-gomodcache go test ./pkg/store/tencent -run TestFindVersionName -count=50
+GOCACHE=/private/tmp/apkgo-gocache GOMODCACHE=/private/tmp/apkgo-gomodcache go test ./pkg/store/tencent/
+GOCACHE=/private/tmp/apkgo-gocache GOMODCACHE=/private/tmp/apkgo-gomodcache go build ./...
+GOCACHE=/private/tmp/apkgo-gocache GOMODCACHE=/private/tmp/apkgo-gomodcache go test ./...
+```
+
+结果：
+
+- `go test ./pkg/store/tencent -run TestFindVersionName -count=50`：通过
+- `go test ./pkg/store/tencent/`：通过
+- `go build ./...`：通过
+- `go test ./...`：失败，但仅有已知基线失败 `pkg/apkgo TestDiagnose_RealProbe`（`doctor_test.go:65 expected AnyFailed=true with bogus api_key`）

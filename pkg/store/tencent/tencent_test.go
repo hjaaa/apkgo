@@ -66,6 +66,23 @@ func TestFindVersionName(t *testing.T) {
 	}
 }
 
+func TestFindVersionNamePrefersNonEmptyVersionName(t *testing.T) {
+	data := []any{
+		map[string]any{
+			"pkg_name":     "com.example.app",
+			"version_name": "",
+		},
+		map[string]any{
+			"pkg_name":     "com.example.app",
+			"version_name": "10.12.2",
+		},
+	}
+
+	if got := findVersionName(data, "com.example.app"); got != "10.12.2" {
+		t.Fatalf("findVersionName() got %q, want %q", got, "10.12.2")
+	}
+}
+
 func TestNextDataRe(t *testing.T) {
 	html := `<html><head></head><body>` +
 		`<script id="__NEXT_DATA__" type="application/json" crossorigin="anonymous">{"a":1}</script>` +

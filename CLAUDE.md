@@ -35,7 +35,8 @@ unified `state` set:
 `not_listed` on that store, so it is terminal like `approved`; `needs_fix`
 means the store explicitly exposed a "整改" style state and remains
 non-terminal for `--watch`. Supported: **tencent, huawei, honor, vivo, oppo,
-samsung** (stores with a review-status API; others report "audit not
+samsung, xiaomi** (stores with a review-status API or Xiaomi version
+inference; others report "audit not
 supported").
 
 `apkgo audit` also reports a separate `listing` dimension for whether the app

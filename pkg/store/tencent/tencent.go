@@ -484,21 +484,30 @@ func findPackageVersion(node any, pkg string) (version string, found bool) {
 	case map[string]any:
 		if p, _ := n["pkg_name"].(string); p == pkg {
 			v, _ := n["version_name"].(string)
-			return v, true
+			if v != "" {
+				return v, true
+			}
+			found = true
 		}
 		for _, v := range n {
 			if got, ok := findPackageVersion(v, pkg); ok {
-				return got, true
+				if got != "" {
+					return got, true
+				}
+				found = true
 			}
 		}
 	case []any:
 		for _, v := range n {
 			if got, ok := findPackageVersion(v, pkg); ok {
-				return got, true
+				if got != "" {
+					return got, true
+				}
+				found = true
 			}
 		}
 	}
-	return "", false
+	return "", found
 }
 
 // findVersionName walks the decoded __NEXT_DATA__ tree for the object whose
