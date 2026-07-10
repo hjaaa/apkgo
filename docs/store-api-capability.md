@@ -10,7 +10,7 @@
 
 | 渠道 | 上架状态（未上架/在架/已下架） | 审核状态（审核中/驳回/通过/通过-首次上架/待整改） | 驳回/整改理由 | 下架理由 | 本项目实现现状 |
 |---|---|---|---|---|---|
-| **华为** | ✅✅✅ 三档全可实现（`releaseState` 14 值码表精确区分） | ✅✅✅／⚠️推断（过审+`onShelfVersion*`为空，可靠）／❌无整改状态 | ✅ `auditInfo.auditOpinion`；大陆应用另有版权/版号/备案三组 `*AuditOpinion` | ❌ 仅 AGC 控制台/站内信 | 已实现审核/listing/首次上架/四组驳回意见；`releaseState=9` 按终态口径映射 `rejected`。 |
+| **华为** | ✅✅⚠️ 未上架/在架可精确区分（`releaseState` 14 值码表）；`releaseState=9`（下架审核不通过）无法精确判定已下架，按 `onShelfVersionCode` 推断 | ✅✅✅／⚠️推断（过审+`onShelfVersion*`为空，可靠）／❌无整改状态 | ✅ `auditInfo.auditOpinion`；大陆应用另有版权/版号/备案三组 `*AuditOpinion` | ❌ 仅 AGC 控制台/站内信 | 已实现审核/listing/首次上架/四组驳回意见；`releaseState=9` 审核维度仍映射 `rejected`，listing 维度按 `onShelfVersionCode` 推断在架，无信号时降级 `unknown`（不再误判为 `off_shelf`）。 |
 | **荣耀** | ⚠️⚠️❌ 未上架/在架可弱推断（`releaseInfo` 空/非空）；已下架不可实现 | ✅✅✅（`auditResult` 0/1/2）／⚠️推断／❌ | ✅ `auditMessage` + `auditAttachment` | ❌ 无下架状态字段 | 已实现 releaseId 精确审核、附件、未上架/在架弱推断与 `approved_first`；无 releaseId 时不声称审核状态。 |
 | **OPPO** | ⚠️✅✅ 在架/已下架可实现（`state` 1/2 或 `audit_status` 111/222）；未上架需推断（`audit_status`=0） | ✅✅✅（17 值码表）／⚠️推断／⚠️后台文本标签兜底 | ✅ 最全：`refuse_reason`、`refuse_advice`、`refuse_file`、`business_refuse_reason`、`freeze_reason/advice` | ⚠️ 仅 `offline_info`（开发者自行申请下架）；平台强制下架无字段 | 已实现数字码优先 listing、关键词回落、完整驳回/冻结理由；冻结映射 `needs_fix`，不推断 `approved_first`。 |
 | **vivo** | ✅✅✅ 三档全可实现（`saleStatus` 0/1/2 一一对应） | ✅✅✅（`status` 2/4/3）／⚠️推断（status=3+saleStatus=0）／❌ | ✅ `unPassReason`（仅审核驳回场景） | ❌ 官方明文：通过消息系统/邮箱通知 | 已实现三档 listing、驳回理由与 `approved_first`；`saleStatus` 缺失/异常降级 `unknown`。 |

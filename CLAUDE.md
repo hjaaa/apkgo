@@ -43,13 +43,17 @@ is on shelf. `listing` is orthogonal to `state`: `on_shelf` (在架),
 `off_shelf` (下架), `not_listed` (未上架), `unknown`. The text renderer shows
 this as a leading column before the review state; JSON output already includes
 the `listing` field through `AuditStoreResult`.
-Listing precision varies by store: Huawei reports all three states directly;
-vivo maps `saleStatus` 0/1/2 to not-listed/on-shelf/off-shelf; OPPO prefers
-`audit_status` 0/111/222 and falls back to conservative label matching; Samsung
-maps direct content states and uses a SALE probe for approved versions; Honor
-weakly distinguishes not-listed/on-shelf from empty/non-empty `releaseInfo` but
-cannot identify off-shelf. Xiaomi only distinguishes on-shelf vs not-listed,
-and Tencent uses its public detail page as a best-effort three-state signal.
+Listing precision varies by store: Huawei reports all three states directly,
+except `releaseState=9` (下架审核不通过, a rejected takedown request), which is
+inferred from the on-shelf version signal and degrades to unknown when that
+signal is absent; vivo maps `saleStatus` 0/1/2 to not-listed/on-shelf/off-shelf;
+OPPO prefers `audit_status` 0/111/222 and falls back to conservative label
+matching; Samsung maps direct content states and uses a SALE probe for
+approved versions; Honor weakly distinguishes not-listed/on-shelf from
+empty/non-empty `releaseInfo` (a missing `releaseInfo` key degrades to
+unknown) but cannot identify off-shelf. Xiaomi only distinguishes on-shelf vs
+not-listed, and Tencent uses its public detail page as a best-effort
+three-state signal.
 Missing fields, unexpected values, and probe/scrape failures degrade to
 `unknown` rather than inventing a business state.
 
