@@ -120,6 +120,26 @@ func TestAuditLiveVersionOnlyReportsNotListedForEmptyReleaseInfo(t *testing.T) {
 	}
 }
 
+// TestAuditLiveVersionOnlyDegradesListingForMissingReleaseInfo pins that a
+// response with no releaseInfo key at all (data:{}) is distinguished from a
+// present-but-empty releaseInfo (data:{"releaseInfo":{}}): honor didn't tell
+// us anything about the live version, so Listing must degrade to unknown
+// instead of being read as not_listed.
+func TestAuditLiveVersionOnlyDegradesListingForMissingReleaseInfo(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"code":0,"data":{}}`)
+	}))
+	defer srv.Close()
+
+	s := &Store{client: resty.New().SetBaseURL(srv.URL).SetHeader("Content-Type", "application/json")}
+	var res store.AuditResult
+	auditLiveVersionOnly(context.Background(), s, "123", &res)
+	if res.State != "" || res.Listing != store.ListingUnknown || res.Error != "" {
+		t.Fatalf("result = %+v, want empty state + unknown listing + no error", res)
+	}
+}
+
 // TestAuditLiveVersionOnlyDegradesListingOnFailure pins that an HTTP failure
 // while fetching get-app-detail degrades Listing to unknown (never guesses
 // on_shelf/not_listed from missing data) and surfaces the failure as Error.

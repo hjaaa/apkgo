@@ -158,7 +158,7 @@ func populateHonorLiveVersion(ctx context.Context, s *Store, appID string, res *
 	var resp struct {
 		honorResp
 		Data struct {
-			ReleaseInfo honorReleaseInfo `json:"releaseInfo"`
+			ReleaseInfo *honorReleaseInfo `json:"releaseInfo"`
 		} `json:"data"`
 	}
 	httpResp, err := s.client.R().
@@ -174,6 +174,12 @@ func populateHonorLiveVersion(ctx context.Context, s *Store, appID string, res *
 	}
 	if resp.Code != 0 {
 		return fmt.Errorf("[%d] %s", resp.Code, resp.text())
+	}
+	if resp.Data.ReleaseInfo == nil {
+		// The releaseInfo key was absent entirely — honor told us nothing
+		// about the live version, so Listing stays unknown rather than
+		// being read as an empty (not_listed) releaseInfo.
+		return nil
 	}
 	res.LiveVersionName = resp.Data.ReleaseInfo.VersionName
 	res.LiveVersionCode = resp.Data.ReleaseInfo.VersionCode
