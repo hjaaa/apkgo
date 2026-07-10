@@ -38,6 +38,41 @@ func init() {
 	store.RegisterAuditor("huawei", audit)
 }
 
+// huaweiAuditInfo carries Huawei's official rejection-opinion fields from
+// the app-info response's auditInfo object.
+type huaweiAuditInfo struct {
+	AuditOpinion              string `json:"auditOpinion"`
+	CopyRightAuditOpinion     string `json:"copyRightAuditOpinion"`
+	CopyRightCodeAuditOpinion string `json:"copyRightCodeAuditOpinion"`
+	RecordAuditOpinion        string `json:"recordAuditOpinion"`
+}
+
+// appendHuaweiAuditOpinions appends Huawei's official rejection opinions to
+// detail, but only when state is rejected; empty fields are skipped.
+func appendHuaweiAuditOpinions(state store.AuditState, detail string, info huaweiAuditInfo) string {
+	if state != store.AuditRejected {
+		return detail
+	}
+	parts := make([]string, 0, 5)
+	if detail = strings.TrimSpace(detail); detail != "" {
+		parts = append(parts, detail)
+	}
+	for _, field := range []struct {
+		name  string
+		value string
+	}{
+		{"auditOpinion", info.AuditOpinion},
+		{"copyRightAuditOpinion", info.CopyRightAuditOpinion},
+		{"copyRightCodeAuditOpinion", info.CopyRightCodeAuditOpinion},
+		{"recordAuditOpinion", info.RecordAuditOpinion},
+	} {
+		if value := strings.TrimSpace(field.value); value != "" {
+			parts = append(parts, field.name+"="+value)
+		}
+	}
+	return strings.Join(parts, "; ")
+}
+
 // audit is registered with `apkgo audit`. It reads the app's releaseState
 // via the read-only app-info query (GET), mapping it to the unified review
 // state — independent of the upload flow.
@@ -74,8 +109,9 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 		OnShelfVersionCode   int64  `json:"onShelfVersionCode"`
 	}
 	var resp struct {
-		Ret     retInfo       `json:"ret"`
-		AppInfo appInfoFields `json:"appInfo"`
+		Ret       retInfo         `json:"ret"`
+		AppInfo   appInfoFields   `json:"appInfo"`
+		AuditInfo huaweiAuditInfo `json:"auditInfo"`
 		appInfoFields
 	}
 	httpResp, err := s.client.R().
@@ -101,6 +137,7 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 		af = resp.appInfoFields
 	}
 	res.State, res.Detail = reviewFromReleaseState(af.ReleaseState, af.OnShelfVersionCode)
+	res.Detail = appendHuaweiAuditOpinions(res.State, res.Detail, resp.AuditInfo)
 	res.Listing = mapHuaweiListing(af.ReleaseState, af.OnShelfVersionCode)
 	res.VersionName = af.VersionNumber
 	res.VersionCode = int32(af.VersionCode)

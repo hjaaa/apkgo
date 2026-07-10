@@ -73,6 +73,27 @@ func TestReviewFromReleaseState(t *testing.T) {
 	}
 }
 
+func TestAppendHuaweiAuditOpinions(t *testing.T) {
+	info := huaweiAuditInfo{
+		AuditOpinion:              "隐私政策不完整",
+		CopyRightAuditOpinion:     "版权材料缺失",
+		CopyRightCodeAuditOpinion: "版号不匹配",
+		RecordAuditOpinion:        "备案号无效",
+	}
+	want := "releaseState=1; auditOpinion=隐私政策不完整; copyRightAuditOpinion=版权材料缺失; copyRightCodeAuditOpinion=版号不匹配; recordAuditOpinion=备案号无效"
+	if got := appendHuaweiAuditOpinions(store.AuditRejected, "releaseState=1", info); got != want {
+		t.Fatalf("appendHuaweiAuditOpinions() = %q, want %q", got, want)
+	}
+
+	empty := huaweiAuditInfo{AuditOpinion: "  隐私政策不完整  "}
+	if got := appendHuaweiAuditOpinions(store.AuditRejected, "releaseState=1", empty); got != "releaseState=1; auditOpinion=隐私政策不完整" {
+		t.Fatalf("empty opinions were not skipped: %q", got)
+	}
+	if got := appendHuaweiAuditOpinions(store.AuditReviewing, "releaseState=4", info); got != "releaseState=4" {
+		t.Fatalf("non-rejected detail changed: %q", got)
+	}
+}
+
 // TestClassifyHuawei locks in the "app's packages exceeds the upper limit"
 // classification from https://github.com/KevinGong2013/apkgo/issues/31 —
 // an AGC-side draft-version package cap, not an apkgo bug, so it must map
