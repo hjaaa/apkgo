@@ -179,12 +179,16 @@ func reviewFromReleaseState(state int, onShelfVersionCode int64) (store.AuditSta
 
 // mapHuaweiListing maps releaseState into the orthogonal listing dimension.
 // During review states, a live version means an update is under review while
-// the old version remains listed.
+// the old version remains listed. releaseState=9 (下架审核不通过, i.e. the
+// takedown request was rejected) is handled separately: it means the app is
+// most likely still listed, not off shelf — onShelfVersionCode > 0 confirms
+// an on_shelf version exists, otherwise there's no signal to prove it's off
+// shelf either, so it degrades to unknown.
 func mapHuaweiListing(state int, onShelfVersionCode int64) store.ListingState {
 	switch state {
 	case 0:
 		return store.ListingOnShelf
-	case 2, 6, 9, 10, 11:
+	case 2, 6, 10, 11:
 		return store.ListingOffShelf
 	case 1, 3, 7, 13:
 		return store.ListingNotListed
@@ -193,6 +197,11 @@ func mapHuaweiListing(state int, onShelfVersionCode int64) store.ListingState {
 			return store.ListingOnShelf
 		}
 		return store.ListingNotListed
+	case 9:
+		if onShelfVersionCode > 0 {
+			return store.ListingOnShelf
+		}
+		return store.ListingUnknown
 	default:
 		return store.ListingUnknown
 	}
