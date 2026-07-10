@@ -115,6 +115,10 @@ func audit(ctx context.Context, cfg map[string]string, _ store.AuditQuery) store
 	status, _ := info["contentStatus"].(string)
 	res.State, res.Detail = mapSamsungStatus(status)
 	res.Listing = mapSamsungListing(status)
+	if res.State == store.AuditApproved {
+		hasSale, probeErr := s.hasSamsungSaleVersion(ctx)
+		res.State, res.Listing = applySamsungSaleProbe(res.State, res.Listing, hasSale, probeErr)
+	}
 	if vn, vc, _ := latestBinary(info); vc > 0 {
 		res.VersionName = vn
 		res.VersionCode = int32(vc)
@@ -133,6 +137,61 @@ func (s *Store) fetchContentInfo(ctx context.Context) (map[string]any, error) {
 		return nil, fmt.Errorf("content_id %s not found in seller account", s.contentID)
 	}
 	return info[0], nil
+}
+
+type samsungAPIResult struct {
+	ResultCode    string `json:"resultCode"`
+	ResultMessage string `json:"resultMessage"`
+}
+
+// hasSamsungSaleVersion probes stagedRolloutBinary with appStatus=SALE to
+// check whether the configured content_id has a version currently on shelf.
+// resultCode 3100 means no SALE version exists (not on shelf); any other
+// non-0000 failure is returned as an error so the caller can fall back
+// without touching the listing/state already derived from contentInfo.
+//
+// The resultCode check runs before the err check: the Store's client (see
+// New) installs a global OnAfterResponse hook that turns any non-2xx
+// response into a non-nil err, but resty's own response-body parsing (which
+// populates resp via SetError) already ran by then — so resp.ResultCode is
+// reliably set even when err is non-nil, and 3100 must be read off resp, not
+// inferred from err.
+func (s *Store) hasSamsungSaleVersion(ctx context.Context) (bool, error) {
+	var resp samsungAPIResult
+	httpResp, err := s.client.R().
+		SetContext(ctx).
+		SetQueryParams(map[string]string{
+			"contentId": s.contentID,
+			"appStatus": "SALE",
+		}).
+		SetResult(&resp).
+		SetError(&resp).
+		Get("/seller/v2/content/stagedRolloutBinary")
+	if resp.ResultCode == "3100" {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if httpResp.IsError() || resp.ResultCode != "0000" {
+		return false, fmt.Errorf("samsung SALE probe failed: HTTP %d [%s] %s", httpResp.StatusCode(), resp.ResultCode, resp.ResultMessage)
+	}
+	return true, nil
+}
+
+// applySamsungSaleProbe folds a hasSamsungSaleVersion probe into the state
+// mapped from contentStatus. It only runs when contentStatus already mapped
+// to approved; a probe error, or any other state, is returned unchanged so
+// the main contentInfo result stands. hasSale=false means the app has no
+// live SALE binary, i.e. this is a first-time approval with nothing on shelf.
+func applySamsungSaleProbe(state store.AuditState, listing store.ListingState, hasSale bool, probeErr error) (store.AuditState, store.ListingState) {
+	if state != store.AuditApproved || probeErr != nil {
+		return state, listing
+	}
+	if hasSale {
+		return state, store.ListingOnShelf
+	}
+	return store.AuditApprovedFirst, store.ListingNotListed
 }
 
 // latestBinary picks the newest entry from a contentInfo binaryList (highest
