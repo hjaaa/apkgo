@@ -62,7 +62,7 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 		res.Error = fmt.Sprintf("no app found for package %s under this developer account", q.Package)
 		return res
 	}
-	res.State, res.Detail = mapVivoAuditState(int(app.Status))
+	res.State, res.Detail = mapVivoAuditState(int(app.Status), app.UnPassReason)
 	res.Listing = store.ListingUnknown // vivo online-state field/value is unverified; degrade safely.
 	res.VersionName = app.VersionName
 	if vc, err := strconv.ParseInt(strings.TrimSpace(app.VersionCode), 10, 32); err == nil {
@@ -73,14 +73,14 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 
 // mapVivoAuditState maps vivo's app.query.details 审核状态 to the unified
 // AuditState. 1=草稿, 2=待审核, 3=审核通过, 4=审核不通过, 5=撤销审核.
-func mapVivoAuditState(status int) (store.AuditState, string) {
+func mapVivoAuditState(status int, unPassReason string) (store.AuditState, string) {
 	switch status {
 	case 2:
 		return store.AuditReviewing, ""
 	case 3:
 		return store.AuditApproved, ""
 	case 4:
-		return store.AuditRejected, ""
+		return store.AuditRejected, strings.TrimSpace(unPassReason)
 	case 5:
 		return store.AuditWithdrawn, ""
 	case 1:
@@ -545,11 +545,12 @@ func (n *lenientInt) UnmarshalJSON(b []byte) error {
 // vivo returns more (app name in zh, online state, etc.) but we only
 // surface what the doctor / audit paths report.
 type appDetails struct {
-	PackageName string     `json:"packageName"`
-	AppName     string     `json:"appName"`
-	VersionName string     `json:"versionName"`
-	VersionCode string     `json:"versionCode"`
-	Status      lenientInt `json:"status"` // 审核状态: 1草稿/2待审核/3通过/4不通过/5撤销
+	PackageName  string     `json:"packageName"`
+	AppName      string     `json:"appName"`
+	VersionName  string     `json:"versionName"`
+	VersionCode  string     `json:"versionCode"`
+	Status       lenientInt `json:"status"` // 审核状态: 1草稿/2待审核/3通过/4不通过/5撤销
+	UnPassReason string     `json:"unPassReason"`
 }
 
 // queryApp calls the read-only `app.query.details` method. Used by the
