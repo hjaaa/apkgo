@@ -162,15 +162,17 @@ func latestBinary(info map[string]any) (versionName string, versionCode int, gms
 
 // mapSamsungStatus maps Galaxy Store contentStatus to the unified state.
 // There are ~38 values; we key off keywords (the raw status is always in
-// Detail). FOR_SALE/READY_FOR_SALE = approved, *_REJECTED = rejected,
-// UNDER_*/READY_*/DELAYED = in review, CANCELED/TERMINATED = withdrawn.
+// Detail). SUSPENDED/*_SUSPENDED = needs_fix, FOR_SALE/READY_FOR_SALE = approved,
+// *_REJECTED = rejected, UNDER_*/READY_*/DELAYED = in review, CANCELED/TERMINATED = withdrawn.
 func mapSamsungStatus(status string) (store.AuditState, string) {
 	u := strings.ToUpper(status)
 	switch {
-	case u == "FOR_SALE" || u == "READY_FOR_SALE" || u == "READY_FOR_CHANGE" || u == "SUSPENDED":
-		return store.AuditApproved, status
 	case strings.Contains(u, "REJECTED"):
 		return store.AuditRejected, status
+	case u == "SUSPENDED" || strings.HasSuffix(u, "_SUSPENDED"):
+		return store.AuditNeedsFix, status
+	case u == "FOR_SALE" || u == "READY_FOR_SALE" || u == "READY_FOR_CHANGE":
+		return store.AuditApproved, status
 	case strings.Contains(u, "UNDER_") || strings.Contains(u, "READY_FOR_") || strings.Contains(u, "READY_TO_") || strings.Contains(u, "DELAYED"):
 		return store.AuditReviewing, status
 	case strings.Contains(u, "CANCELED") || u == "TERMINATED":
