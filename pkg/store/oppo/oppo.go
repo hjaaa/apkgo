@@ -59,7 +59,14 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 		return res
 	}
 	res.State, res.Detail = mapOppoAudit(app.AuditStatusName, app.RefuseReason)
-	res.Listing = oppoListing(app.AuditStatusName)
+	res.Detail = appendOppoAuditExtra(res.State, res.Detail, oppoAuditExtra{
+		RefuseAdvice:         app.RefuseAdvice,
+		BusinessRefuseReason: app.BusinessRefuseReason,
+		RefuseFile:           app.RefuseFile,
+		FreezeReason:         app.FreezeReason,
+		FreezeAdvice:         app.FreezeAdvice,
+	})
+	res.Listing = oppoListing(app.State, app.AuditStatus, app.AuditStatusName)
 	res.VersionName = app.VersionName
 	if vc, err := strconv.ParseInt(strings.TrimSpace(app.VersionCode), 10, 32); err == nil {
 		res.VersionCode = int32(vc)
@@ -74,7 +81,7 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 // surfaced in Detail so the operator sees ground truth regardless.
 func mapOppoAudit(name, refuse string) (store.AuditState, string) {
 	switch {
-	case containsAny(name, "整改"):
+	case containsAny(name, "整改", "冻结"):
 		return store.AuditNeedsFix, name
 	case containsAny(name, "拒绝", "不通过", "驳回", "失败", "打回"):
 		if refuse != "" {
@@ -83,7 +90,7 @@ func mapOppoAudit(name, refuse string) (store.AuditState, string) {
 		return store.AuditRejected, name
 	case containsAny(name, "上线", "上架", "已发布", "通过"):
 		return store.AuditApproved, name
-	case containsAny(name, "下架", "撤销", "冻结"):
+	case containsAny(name, "下架", "撤销"):
 		return store.AuditWithdrawn, name
 	case containsAny(name, "审核", "待审", "审查", "送审"):
 		return store.AuditReviewing, name
@@ -94,9 +101,27 @@ func mapOppoAudit(name, refuse string) (store.AuditState, string) {
 	}
 }
 
-// oppoListing 从 app/info 的 audit_status_name 关键词推导上下架状态。
-// OPPO 未公开稳定数字码表，因此这里只做保守的关键词软匹配。
-func oppoListing(name string) store.ListingState {
+// oppoListing maps OPPO's listing signals to the unified state. The dedicated
+// state field takes priority (1→on_shelf, 2→off_shelf), then the numeric
+// audit_status code (0→not_listed, 111→on_shelf, 222→off_shelf), then keyword
+// matching on the label — so an already-listed app whose update is under
+// review (audit_status is a review code, label like "审核中") still reports
+// on_shelf instead of unknown.
+func oppoListing(state, auditStatus, name string) store.ListingState {
+	switch strings.TrimSpace(state) {
+	case "1":
+		return store.ListingOnShelf
+	case "2":
+		return store.ListingOffShelf
+	}
+	switch strings.TrimSpace(auditStatus) {
+	case "0":
+		return store.ListingNotListed
+	case "111":
+		return store.ListingOnShelf
+	case "222":
+		return store.ListingOffShelf
+	}
 	switch {
 	// 待上架 / 上架审核中 等待上架类标签本身含「上架」子串，但应用尚未在架，
 	// 必须先于下面的「上架」宽匹配拦截，否则会把待发布状态误判为 on_shelf。
@@ -118,6 +143,58 @@ func containsAny(s string, subs ...string) bool {
 		}
 	}
 	return false
+}
+
+// oppoAuditExtra carries OPPO's supplementary audit fields beyond the main
+// audit_status_name/refuse_reason pair, so appendOppoAuditExtra can append
+// the state-appropriate subset to Detail.
+type oppoAuditExtra struct {
+	RefuseAdvice         string
+	BusinessRefuseReason string
+	RefuseFile           string
+	FreezeReason         string
+	FreezeAdvice         string
+}
+
+// appendOppoAuditExtra appends state-specific reason fields to detail:
+// rejected gets the refuse group, needs_fix gets the freeze group, other
+// states are returned unchanged. Empty values are skipped.
+func appendOppoAuditExtra(state store.AuditState, detail string, extra oppoAuditExtra) string {
+	parts := make([]string, 0, 4)
+	if detail = strings.TrimSpace(detail); detail != "" {
+		parts = append(parts, detail)
+	}
+	var fields []struct {
+		name  string
+		value string
+	}
+	switch state {
+	case store.AuditRejected:
+		fields = []struct {
+			name  string
+			value string
+		}{
+			{"refuse_advice", extra.RefuseAdvice},
+			{"business_refuse_reason", extra.BusinessRefuseReason},
+			{"refuse_file", extra.RefuseFile},
+		}
+	case store.AuditNeedsFix:
+		fields = []struct {
+			name  string
+			value string
+		}{
+			{"freeze_reason", extra.FreezeReason},
+			{"freeze_advice", extra.FreezeAdvice},
+		}
+	default:
+		return strings.Join(parts, "; ")
+	}
+	for _, field := range fields {
+		if value := strings.TrimSpace(field.value); value != "" {
+			parts = append(parts, field.name+"="+value)
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 // errEnvelope only carries `errno` so it can be embedded in any response
@@ -579,27 +656,33 @@ func (s *Store) sign(data url.Values) url.Values {
 // Data types
 
 type appData struct {
-	AppName           string `json:"app_name"`
-	SecondCategoryID  string `json:"second_category_id"`
-	ThirdCategoryID   string `json:"third_category_id"`
-	Summary           string `json:"summary"`
-	DetailDesc        string `json:"detail_desc"`
-	PrivacySourceURL  string `json:"privacy_source_url"`
-	IconURL           string `json:"icon_url"`
-	PicURL            string `json:"pic_url"`
-	CopyrightURL      string `json:"copyright_url"`
-	ElectronicCertURL string `json:"electronic_cert_url"` // 电子版权证书; copyright_url 已弃用,改用此字段
-	BusinessUsername  string `json:"business_username"`
-	BusinessEmail     string `json:"business_email"`
-	BusinessMobile    string `json:"business_mobile"`
-	AgeLevel          string `json:"age_level"`
-	AdaptiveEquipment string `json:"adaptive_equipment"`
-	CustomerContact   string `json:"customer_contact"`
-	AuditStatus       string `json:"audit_status"`      // numeric code (审核状态对照表 not published in the API传包 docs)
-	AuditStatusName   string `json:"audit_status_name"` // human label, e.g. "上线" / "审核中"
-	RefuseReason      string `json:"refuse_reason"`
-	VersionName       string `json:"version_name"` // 版本名称
-	VersionCode       string `json:"version_code"` // 版本号 (returned as a string)
+	AppName              string `json:"app_name"`
+	SecondCategoryID     string `json:"second_category_id"`
+	ThirdCategoryID      string `json:"third_category_id"`
+	Summary              string `json:"summary"`
+	DetailDesc           string `json:"detail_desc"`
+	PrivacySourceURL     string `json:"privacy_source_url"`
+	IconURL              string `json:"icon_url"`
+	PicURL               string `json:"pic_url"`
+	CopyrightURL         string `json:"copyright_url"`
+	ElectronicCertURL    string `json:"electronic_cert_url"` // 电子版权证书; copyright_url 已弃用,改用此字段
+	BusinessUsername     string `json:"business_username"`
+	BusinessEmail        string `json:"business_email"`
+	BusinessMobile       string `json:"business_mobile"`
+	AgeLevel             string `json:"age_level"`
+	AdaptiveEquipment    string `json:"adaptive_equipment"`
+	CustomerContact      string `json:"customer_contact"`
+	State                string `json:"state"`             // listing state: 1=在架, 2=下架 (see docs/store-api-capability.md)
+	AuditStatus          string `json:"audit_status"`      // numeric code (审核状态对照表 not published in the API传包 docs)
+	AuditStatusName      string `json:"audit_status_name"` // human label, e.g. "上线" / "审核中"
+	RefuseReason         string `json:"refuse_reason"`
+	RefuseAdvice         string `json:"refuse_advice"`
+	BusinessRefuseReason string `json:"business_refuse_reason"`
+	RefuseFile           string `json:"refuse_file"`
+	FreezeReason         string `json:"freeze_reason"`
+	FreezeAdvice         string `json:"freeze_advice"`
+	VersionName          string `json:"version_name"` // 版本名称
+	VersionCode          string `json:"version_code"` // 版本号 (returned as a string)
 }
 
 type uploadResultData struct {

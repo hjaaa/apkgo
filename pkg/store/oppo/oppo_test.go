@@ -7,31 +7,70 @@ import (
 )
 
 func TestOppoListing(t *testing.T) {
-	cases := map[string]store.ListingState{
-		"已上线":   store.ListingOnShelf,
-		"上架成功":  store.ListingOnShelf,
-		"已发布":   store.ListingOnShelf,
-		"已下架":   store.ListingOffShelf,
-		"已冻结":   store.ListingOffShelf,
-		"审核中":   store.ListingUnknown,
-		"待上架":   store.ListingUnknown,
-		"上架审核中": store.ListingUnknown,
-		"":      store.ListingUnknown,
+	cases := []struct {
+		state string
+		code  string
+		name  string
+		want  store.ListingState
+	}{
+		{"", "0", "", store.ListingNotListed},
+		{"", "111", "审核中", store.ListingOnShelf},
+		{"", "222", "已上线", store.ListingOffShelf},
+		{"", "999", "已上线", store.ListingOnShelf},
+		{"", "", "已下架", store.ListingOffShelf},
+		{"", "", "待上架", store.ListingUnknown},
+		{"", "", "上架审核中", store.ListingUnknown},
+		{"", "999", "", store.ListingUnknown},
+		// 在架应用的更新在审核中:audit_status 是审核码、标签为审核类文案,
+		// 此时专用 state 字段仍为 1,必须报 on_shelf 而非 unknown。
+		{"1", "999", "审核中", store.ListingOnShelf},
+		{"2", "999", "审核中", store.ListingOffShelf},
+		// state 与 audit_status 冲突时,以专用 listing 字段为准。
+		{"1", "222", "", store.ListingOnShelf},
+		{"0", "999", "", store.ListingUnknown},
 	}
-	for name, want := range cases {
-		if got := oppoListing(name); got != want {
-			t.Errorf("oppoListing(%q) = %q, want %q", name, got, want)
+	for _, tc := range cases {
+		if got := oppoListing(tc.state, tc.code, tc.name); got != tc.want {
+			t.Errorf("oppoListing(%q, %q, %q) = %q, want %q", tc.state, tc.code, tc.name, got, tc.want)
 		}
 	}
 }
 
 func TestMapOppoAuditNeedsFix(t *testing.T) {
-	got, _ := mapOppoAudit("待整改", "")
-	if got != store.AuditNeedsFix {
-		t.Errorf("mapOppoAudit(待整改) = %q, want %q", got, store.AuditNeedsFix)
+	cases := map[string]store.AuditState{
+		"待整改": store.AuditNeedsFix,
+		"已冻结": store.AuditNeedsFix,
+		"已下架": store.AuditWithdrawn,
+		"已撤销": store.AuditWithdrawn,
+		"已上线": store.AuditApproved,
+	}
+	for name, want := range cases {
+		if got, _ := mapOppoAudit(name, ""); got != want {
+			t.Errorf("mapOppoAudit(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestAppendOppoAuditExtra(t *testing.T) {
+	rejected := oppoAuditExtra{
+		RefuseAdvice:         "补充隐私政策",
+		BusinessRefuseReason: "资质不完整",
+		RefuseFile:           "https://example.com/refuse.png",
+		FreezeReason:         "不应出现在驳回态",
+		FreezeAdvice:         "不应出现在驳回态",
+	}
+	wantRejected := "审核不通过: 主理由; refuse_advice=补充隐私政策; business_refuse_reason=资质不完整; refuse_file=https://example.com/refuse.png"
+	if got := appendOppoAuditExtra(store.AuditRejected, "审核不通过: 主理由", rejected); got != wantRejected {
+		t.Fatalf("rejected detail = %q, want %q", got, wantRejected)
 	}
 
-	if got, _ := mapOppoAudit("已上线", ""); got != store.AuditApproved {
-		t.Errorf("mapOppoAudit(已上线) = %q, want %q", got, store.AuditApproved)
+	frozen := oppoAuditExtra{FreezeReason: "违规冻结", FreezeAdvice: "完成整改后申诉", RefuseAdvice: "不应出现"}
+	wantFrozen := "已冻结; freeze_reason=违规冻结; freeze_advice=完成整改后申诉"
+	if got := appendOppoAuditExtra(store.AuditNeedsFix, "已冻结", frozen); got != wantFrozen {
+		t.Fatalf("freeze detail = %q, want %q", got, wantFrozen)
+	}
+
+	if got := appendOppoAuditExtra(store.AuditApproved, "已上线", rejected); got != "已上线" {
+		t.Fatalf("approved detail changed: %q", got)
 	}
 }

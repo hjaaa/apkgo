@@ -13,8 +13,7 @@ func TestMapHuaweiReleaseState(t *testing.T) {
 	cases := map[int]store.AuditState{
 		4: store.AuditReviewing, 5: store.AuditReviewing, 12: store.AuditReviewing,
 		0: store.AuditApproved, 3: store.AuditApproved,
-		9: store.AuditNeedsFix,
-		1: store.AuditRejected, 8: store.AuditRejected, 13: store.AuditRejected,
+		1: store.AuditRejected, 8: store.AuditRejected, 9: store.AuditRejected, 13: store.AuditRejected,
 		2: store.AuditWithdrawn, 10: store.AuditWithdrawn, 11: store.AuditWithdrawn,
 		7: store.AuditUnknown, 99: store.AuditUnknown,
 	}
@@ -34,7 +33,8 @@ func TestMapHuaweiListing(t *testing.T) {
 		{0, 100, store.ListingOnShelf},
 		{2, 100, store.ListingOffShelf},
 		{6, 100, store.ListingOffShelf},
-		{9, 100, store.ListingOffShelf},
+		{9, 100, store.ListingOnShelf},
+		{9, 0, store.ListingUnknown},
 		{10, 100, store.ListingOffShelf},
 		{11, 100, store.ListingOffShelf},
 		{7, 0, store.ListingNotListed},
@@ -64,13 +64,34 @@ func TestReviewFromReleaseState(t *testing.T) {
 		{3, 0, store.AuditApprovedFirst},
 		{0, 120, store.AuditApproved},
 		{4, 0, store.AuditReviewing},
-		{9, 0, store.AuditNeedsFix},
+		{9, 0, store.AuditRejected},
 		{1, 0, store.AuditRejected},
 	}
 	for _, tc := range cases {
 		if got, _ := reviewFromReleaseState(tc.state, tc.onShelf); got != tc.want {
 			t.Errorf("reviewFromReleaseState(%d, %d) = %q, want %q", tc.state, tc.onShelf, got, tc.want)
 		}
+	}
+}
+
+func TestAppendHuaweiAuditOpinions(t *testing.T) {
+	info := huaweiAuditInfo{
+		AuditOpinion:              "隐私政策不完整",
+		CopyRightAuditOpinion:     "版权材料缺失",
+		CopyRightCodeAuditOpinion: "版号不匹配",
+		RecordAuditOpinion:        "备案号无效",
+	}
+	want := "releaseState=1; auditOpinion=隐私政策不完整; copyRightAuditOpinion=版权材料缺失; copyRightCodeAuditOpinion=版号不匹配; recordAuditOpinion=备案号无效"
+	if got := appendHuaweiAuditOpinions(store.AuditRejected, "releaseState=1", info); got != want {
+		t.Fatalf("appendHuaweiAuditOpinions() = %q, want %q", got, want)
+	}
+
+	empty := huaweiAuditInfo{AuditOpinion: "  隐私政策不完整  "}
+	if got := appendHuaweiAuditOpinions(store.AuditRejected, "releaseState=1", empty); got != "releaseState=1; auditOpinion=隐私政策不完整" {
+		t.Fatalf("empty opinions were not skipped: %q", got)
+	}
+	if got := appendHuaweiAuditOpinions(store.AuditReviewing, "releaseState=4", info); got != "releaseState=4" {
+		t.Fatalf("non-rejected detail changed: %q", got)
 	}
 }
 

@@ -38,6 +38,41 @@ func init() {
 	store.RegisterAuditor("huawei", audit)
 }
 
+// huaweiAuditInfo carries Huawei's official rejection-opinion fields from
+// the app-info response's auditInfo object.
+type huaweiAuditInfo struct {
+	AuditOpinion              string `json:"auditOpinion"`
+	CopyRightAuditOpinion     string `json:"copyRightAuditOpinion"`
+	CopyRightCodeAuditOpinion string `json:"copyRightCodeAuditOpinion"`
+	RecordAuditOpinion        string `json:"recordAuditOpinion"`
+}
+
+// appendHuaweiAuditOpinions appends Huawei's official rejection opinions to
+// detail, but only when state is rejected; empty fields are skipped.
+func appendHuaweiAuditOpinions(state store.AuditState, detail string, info huaweiAuditInfo) string {
+	if state != store.AuditRejected {
+		return detail
+	}
+	parts := make([]string, 0, 5)
+	if detail = strings.TrimSpace(detail); detail != "" {
+		parts = append(parts, detail)
+	}
+	for _, field := range []struct {
+		name  string
+		value string
+	}{
+		{"auditOpinion", info.AuditOpinion},
+		{"copyRightAuditOpinion", info.CopyRightAuditOpinion},
+		{"copyRightCodeAuditOpinion", info.CopyRightCodeAuditOpinion},
+		{"recordAuditOpinion", info.RecordAuditOpinion},
+	} {
+		if value := strings.TrimSpace(field.value); value != "" {
+			parts = append(parts, field.name+"="+value)
+		}
+	}
+	return strings.Join(parts, "; ")
+}
+
 // audit is registered with `apkgo audit`. It reads the app's releaseState
 // via the read-only app-info query (GET), mapping it to the unified review
 // state — independent of the upload flow.
@@ -74,8 +109,9 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 		OnShelfVersionCode   int64  `json:"onShelfVersionCode"`
 	}
 	var resp struct {
-		Ret     retInfo       `json:"ret"`
-		AppInfo appInfoFields `json:"appInfo"`
+		Ret       retInfo         `json:"ret"`
+		AppInfo   appInfoFields   `json:"appInfo"`
+		AuditInfo huaweiAuditInfo `json:"auditInfo"`
 		appInfoFields
 	}
 	httpResp, err := s.client.R().
@@ -101,6 +137,7 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 		af = resp.appInfoFields
 	}
 	res.State, res.Detail = reviewFromReleaseState(af.ReleaseState, af.OnShelfVersionCode)
+	res.Detail = appendHuaweiAuditOpinions(res.State, res.Detail, resp.AuditInfo)
 	res.Listing = mapHuaweiListing(af.ReleaseState, af.OnShelfVersionCode)
 	res.VersionName = af.VersionNumber
 	res.VersionCode = int32(af.VersionCode)
@@ -119,12 +156,10 @@ func mapHuaweiReleaseState(state int) (store.AuditState, string) {
 		return store.AuditReviewing, fmt.Sprintf("releaseState=%d", state)
 	case 0, 3:
 		return store.AuditApproved, fmt.Sprintf("releaseState=%d", state)
-	case 1, 8, 13:
+	case 1, 8, 9, 13:
 		return store.AuditRejected, fmt.Sprintf("releaseState=%d", state)
 	case 2, 10, 11:
 		return store.AuditWithdrawn, fmt.Sprintf("releaseState=%d", state)
-	case 9:
-		return store.AuditNeedsFix, "下架审核不通过(releaseState=9)"
 	case 7:
 		return store.AuditUnknown, "draft (草稿)"
 	default:
@@ -144,12 +179,16 @@ func reviewFromReleaseState(state int, onShelfVersionCode int64) (store.AuditSta
 
 // mapHuaweiListing maps releaseState into the orthogonal listing dimension.
 // During review states, a live version means an update is under review while
-// the old version remains listed.
+// the old version remains listed. releaseState=9 (下架审核不通过, i.e. the
+// takedown request was rejected) is handled separately: it means the app is
+// most likely still listed, not off shelf — onShelfVersionCode > 0 confirms
+// an on_shelf version exists, otherwise there's no signal to prove it's off
+// shelf either, so it degrades to unknown.
 func mapHuaweiListing(state int, onShelfVersionCode int64) store.ListingState {
 	switch state {
 	case 0:
 		return store.ListingOnShelf
-	case 2, 6, 9, 10, 11:
+	case 2, 6, 10, 11:
 		return store.ListingOffShelf
 	case 1, 3, 7, 13:
 		return store.ListingNotListed
@@ -158,6 +197,11 @@ func mapHuaweiListing(state int, onShelfVersionCode int64) store.ListingState {
 			return store.ListingOnShelf
 		}
 		return store.ListingNotListed
+	case 9:
+		if onShelfVersionCode > 0 {
+			return store.ListingOnShelf
+		}
+		return store.ListingUnknown
 	default:
 		return store.ListingUnknown
 	}

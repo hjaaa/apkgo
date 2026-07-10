@@ -74,10 +74,18 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 	}
 	res.Listing = store.ListingUnknown
 	if q.ExternalID != "" {
+		// get-audit-result is the authoritative lookup and must run first on
+		// the shared context: the listing enrichment below is best-effort, and
+		// neither its failure nor a stalled get-app-detail eating the context
+		// budget may hide the exact submission result.
 		auditByRelease(ctx, s, appID, q.ExternalID, &res)
+		_ = populateHonorLiveVersion(ctx, s, appID, &res)
+		res.State = applyHonorFirstListing(res.State, res.Listing)
 		return res
 	}
-	auditLiveVersionOnly(ctx, s, appID, &res)
+	if err := populateHonorLiveVersion(ctx, s, appID, &res); err != nil {
+		res.Error = err.Error()
+	}
 	return res
 }
 
@@ -92,9 +100,10 @@ func auditByRelease(ctx context.Context, s *Store, appID, releaseID string, res 
 	var resp struct {
 		honorResp
 		Data []struct {
-			ReleaseID    string `json:"releaseId"`
-			AuditResult  int    `json:"auditResult"`
-			AuditMessage string `json:"auditMessage"`
+			ReleaseID       string   `json:"releaseId"`
+			AuditResult     int      `json:"auditResult"`
+			AuditMessage    string   `json:"auditMessage"`
+			AuditAttachment []string `json:"auditAttachment"`
 		} `json:"data"`
 	}
 	httpResp, err := s.client.R().
@@ -122,19 +131,36 @@ func auditByRelease(ctx context.Context, s *Store, appID, releaseID string, res 
 	}
 	item := resp.Data[0]
 	res.State, res.Detail = mapHonorAudit(item.AuditResult, item.AuditMessage)
+	res.Detail = appendHonorAuditAttachments(res.State, res.Detail, item.AuditAttachment)
 }
 
-// auditLiveVersionOnly reports the already-on-shelf version via
-// get-app-detail's releaseInfo, without claiming a review state — used when
-// no releaseId is available to pin a get-audit-result query.
-func auditLiveVersionOnly(ctx context.Context, s *Store, appID string, res *store.AuditResult) {
+// honorReleaseInfo is the releaseInfo block from get-app-detail: the
+// already-live version, if any.
+type honorReleaseInfo struct {
+	VersionName string `json:"versionName"`
+	VersionCode int32  `json:"versionCode"`
+}
+
+// honorListing infers listing from get-app-detail's releaseInfo: a non-empty
+// versionName or a positive versionCode means a version has been published
+// and is live; an empty releaseInfo means the app has never been released.
+func honorListing(versionName string, versionCode int32) store.ListingState {
+	if strings.TrimSpace(versionName) != "" || versionCode > 0 {
+		return store.ListingOnShelf
+	}
+	return store.ListingNotListed
+}
+
+// populateHonorLiveVersion fetches get-app-detail and fills LiveVersionName/
+// LiveVersionCode plus a weak listing inference (honorListing) from
+// releaseInfo. Listing degrades to unknown on any failure and is left to the
+// caller whether to also surface the error.
+func populateHonorLiveVersion(ctx context.Context, s *Store, appID string, res *store.AuditResult) error {
+	res.Listing = store.ListingUnknown
 	var resp struct {
 		honorResp
 		Data struct {
-			ReleaseInfo struct {
-				VersionName string `json:"versionName"`
-				VersionCode int32  `json:"versionCode"`
-			} `json:"releaseInfo"`
+			ReleaseInfo *honorReleaseInfo `json:"releaseInfo"`
 		} `json:"data"`
 	}
 	httpResp, err := s.client.R().
@@ -143,19 +169,53 @@ func auditLiveVersionOnly(ctx context.Context, s *Store, appID string, res *stor
 		SetResult(&resp).
 		Get("/openapi/v1/publish/get-app-detail")
 	if err != nil {
-		res.Error = err.Error()
-		return
+		return err
 	}
 	if httpResp.IsError() {
-		res.Error = fmt.Sprintf("http %d: %s", httpResp.StatusCode(), truncateBody(httpResp.String()))
-		return
+		return fmt.Errorf("http %d: %s", httpResp.StatusCode(), truncateBody(httpResp.String()))
 	}
 	if resp.Code != 0 {
-		res.Error = fmt.Sprintf("[%d] %s", resp.Code, resp.text())
-		return
+		return fmt.Errorf("[%d] %s", resp.Code, resp.text())
+	}
+	if resp.Data.ReleaseInfo == nil {
+		// The releaseInfo key was absent entirely — honor told us nothing
+		// about the live version, so Listing stays unknown rather than
+		// being read as an empty (not_listed) releaseInfo.
+		return nil
 	}
 	res.LiveVersionName = resp.Data.ReleaseInfo.VersionName
 	res.LiveVersionCode = resp.Data.ReleaseInfo.VersionCode
+	res.Listing = honorListing(res.LiveVersionName, res.LiveVersionCode)
+	return nil
+}
+
+// auditLiveVersionOnly reports the already-on-shelf version via
+// get-app-detail's releaseInfo, without claiming a review state — used when
+// no releaseId is available to pin a get-audit-result query.
+func auditLiveVersionOnly(ctx context.Context, s *Store, appID string, res *store.AuditResult) {
+	if err := populateHonorLiveVersion(ctx, s, appID, res); err != nil {
+		res.Error = err.Error()
+	}
+}
+
+// appendHonorAuditAttachments appends honor's official auditAttachment URLs
+// to Detail as "attachment=<url>" segments, only when the state is rejected
+// — attachments are only meaningful alongside a rejection reason. Blank
+// entries are skipped and URLs are left unmodified.
+func appendHonorAuditAttachments(state store.AuditState, detail string, attachments []string) string {
+	if state != store.AuditRejected {
+		return detail
+	}
+	parts := make([]string, 0, len(attachments)+1)
+	if detail = strings.TrimSpace(detail); detail != "" {
+		parts = append(parts, detail)
+	}
+	for _, attachment := range attachments {
+		if attachment = strings.TrimSpace(attachment); attachment != "" {
+			parts = append(parts, "attachment="+attachment)
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 // mapHonorAudit maps an auditResult code to the unified state. Shared by
@@ -177,6 +237,16 @@ func mapHonorAudit(auditResult int, msg string) (store.AuditState, string) {
 	default:
 		return store.AuditUnknown, fmt.Sprintf("auditResult=%d", auditResult)
 	}
+}
+
+// applyHonorFirstListing refines approved state to approved_first when the
+// app is confirmed not yet on shelf — honor's first-time shelf signal.
+// Only applies to approved state with not_listed; other combinations pass through.
+func applyHonorFirstListing(state store.AuditState, listing store.ListingState) store.AuditState {
+	if state == store.AuditApproved && listing == store.ListingNotListed {
+		return store.AuditApprovedFirst
+	}
+	return state
 }
 
 // honorResp is honor's standard response envelope. Code 0 = success.

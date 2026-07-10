@@ -62,8 +62,9 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 		res.Error = fmt.Sprintf("no app found for package %s under this developer account", q.Package)
 		return res
 	}
-	res.State, res.Detail = mapVivoAuditState(int(app.Status))
-	res.Listing = store.ListingUnknown // vivo online-state field/value is unverified; degrade safely.
+	res.State, res.Detail = mapVivoAuditState(int(app.Status), app.UnPassReason)
+	res.Listing = vivoListing(app.SaleStatus)
+	res.State = applyVivoFirstListing(res.State, res.Listing)
 	res.VersionName = app.VersionName
 	if vc, err := strconv.ParseInt(strings.TrimSpace(app.VersionCode), 10, 32); err == nil {
 		res.VersionCode = int32(vc)
@@ -73,14 +74,14 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 
 // mapVivoAuditState maps vivo's app.query.details 审核状态 to the unified
 // AuditState. 1=草稿, 2=待审核, 3=审核通过, 4=审核不通过, 5=撤销审核.
-func mapVivoAuditState(status int) (store.AuditState, string) {
+func mapVivoAuditState(status int, unPassReason string) (store.AuditState, string) {
 	switch status {
 	case 2:
 		return store.AuditReviewing, ""
 	case 3:
 		return store.AuditApproved, ""
 	case 4:
-		return store.AuditRejected, ""
+		return store.AuditRejected, strings.TrimSpace(unPassReason)
 	case 5:
 		return store.AuditWithdrawn, ""
 	case 1:
@@ -90,10 +91,33 @@ func mapVivoAuditState(status int) (store.AuditState, string) {
 	}
 }
 
-// vivoListing maps vivo's app.query.details online-state to a unified listing state.
-// The source field/value is still unverified, so every input degrades to unknown.
-func vivoListing(onlineState int) store.ListingState {
-	return store.ListingUnknown
+// vivoListing maps vivo's app.query.details saleStatus to a unified listing state.
+// invalid (missing field, or a value that didn't decode to an integer) → unknown,
+// 0 → not_listed, 1 → on_shelf, 2 → off_shelf, other → unknown.
+func vivoListing(saleStatus saleStatusField) store.ListingState {
+	if !saleStatus.Valid {
+		return store.ListingUnknown
+	}
+	switch saleStatus.Value {
+	case 0:
+		return store.ListingNotListed
+	case 1:
+		return store.ListingOnShelf
+	case 2:
+		return store.ListingOffShelf
+	default:
+		return store.ListingUnknown
+	}
+}
+
+// applyVivoFirstListing refines approved to approved_first when the app
+// is not yet listed (saleStatus 0). Only exact match (approved + not_listed)
+// qualifies; missing or on_shelf listing remains as generic approved.
+func applyVivoFirstListing(state store.AuditState, listing store.ListingState) store.AuditState {
+	if state == store.AuditApproved && listing == store.ListingNotListed {
+		return store.AuditApprovedFirst
+	}
+	return state
 }
 
 type Store struct {
@@ -541,15 +565,40 @@ func (n *lenientInt) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// saleStatusField decodes vivo's saleStatus field, tracking whether it
+// actually resolved to an integer. vivo is inconsistent about whether this
+// field is quoted, and sometimes serves a blank string or a non-numeric
+// placeholder ("invalid") — Valid stays false in those cases (and when the
+// key is absent), so callers can tell "no usable signal" apart from a real
+// saleStatus of 0.
+type saleStatusField struct {
+	Value int
+	Valid bool
+}
+
+func (f *saleStatusField) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	if s == "" || s == "null" {
+		return nil
+	}
+	if v, err := strconv.Atoi(s); err == nil {
+		f.Value = v
+		f.Valid = true
+	}
+	return nil
+}
+
 // appDetails is the slice of fields apkgo needs from `app.query.details`.
 // vivo returns more (app name in zh, online state, etc.) but we only
 // surface what the doctor / audit paths report.
 type appDetails struct {
-	PackageName string     `json:"packageName"`
-	AppName     string     `json:"appName"`
-	VersionName string     `json:"versionName"`
-	VersionCode string     `json:"versionCode"`
-	Status      lenientInt `json:"status"` // 审核状态: 1草稿/2待审核/3通过/4不通过/5撤销
+	PackageName  string          `json:"packageName"`
+	AppName      string          `json:"appName"`
+	VersionName  string          `json:"versionName"`
+	VersionCode  string          `json:"versionCode"`
+	Status       lenientInt      `json:"status"` // 审核状态: 1草稿/2待审核/3通过/4不通过/5撤销
+	UnPassReason string          `json:"unPassReason"`
+	SaleStatus   saleStatusField `json:"saleStatus"`
 }
 
 // queryApp calls the read-only `app.query.details` method. Used by the
