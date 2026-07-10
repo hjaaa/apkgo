@@ -245,14 +245,18 @@ func mapSamsungStatus(status string) (store.AuditState, string) {
 }
 
 // mapSamsungListing maps Galaxy Store contentStatus to the unified listing state.
-// Conservatively maps observed statuses: FOR_SALE→on_shelf; SUSPENDED/*_SUSPENDED/TERMINATED→off_shelf;
+// Conservatively maps observed statuses: FOR_SALE→on_shelf; SUSPENDED/TERMINATED→off_shelf;
 // REGISTERING/BETA_REGISTERING→not_listed; everything else→unknown (no HTTP probe).
+// Only the bare SALE-side statuses imply off-shelf: per Samsung's official
+// status mapping, the *_SUSPENDED variants (PRE_REVIEWS/CONTENT_REVIEW/
+// DEVICE_TEST/TEST_CONFIRMATION) carry appStatus=REGISTRATION and can hit a
+// first submission that was never listed, so they degrade to unknown.
 func mapSamsungListing(status string) store.ListingState {
 	u := strings.ToUpper(strings.TrimSpace(status))
 	switch {
 	case u == "FOR_SALE":
 		return store.ListingOnShelf
-	case u == "SUSPENDED" || strings.HasSuffix(u, "_SUSPENDED") || u == "TERMINATED":
+	case u == "SUSPENDED" || u == "TERMINATED":
 		return store.ListingOffShelf
 	case u == "REGISTERING" || u == "BETA_REGISTERING":
 		return store.ListingNotListed

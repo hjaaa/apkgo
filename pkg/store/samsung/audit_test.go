@@ -41,16 +41,22 @@ func TestMapSamsungStatus(t *testing.T) {
 
 func TestMapSamsungListing(t *testing.T) {
 	cases := map[string]store.ListingState{
-		"FOR_SALE":                 store.ListingOnShelf,
-		"SUSPENDED":                store.ListingOffShelf,
-		"TERMINATED":               store.ListingOffShelf,
-		"REGISTERING":              store.ListingNotListed,
-		"BETA_REGISTERING":         store.ListingNotListed,
-		"CONTENT_REVIEW_SUSPENDED": store.ListingOffShelf,
-		"UPDATING":                 store.ListingUnknown,
-		"READY_FOR_SALE":           store.ListingUnknown,
-		"":                         store.ListingUnknown,
-		"WHATEVER":                 store.ListingUnknown,
+		"FOR_SALE":         store.ListingOnShelf,
+		"SUSPENDED":        store.ListingOffShelf,
+		"TERMINATED":       store.ListingOffShelf,
+		"REGISTERING":      store.ListingNotListed,
+		"BETA_REGISTERING": store.ListingNotListed,
+		// 审核/注册阶段的 *_SUSPENDED（官方映射表 appStatus=REGISTRATION）可能
+		// 发生在从未上架的首次提交上，不能断言 off_shelf，降级 unknown。
+		"PRE_REVIEWS_SUSPENDED":       store.ListingUnknown,
+		"CONTENT_REVIEW_SUSPENDED":    store.ListingUnknown,
+		"DEVICE_TEST_SUSPENDED":       store.ListingUnknown,
+		"TEST_CONFIRMATION_SUSPENDED": store.ListingUnknown,
+		"BETA_SUSPENDED":              store.ListingUnknown,
+		"UPDATING":                    store.ListingUnknown,
+		"READY_FOR_SALE":              store.ListingUnknown,
+		"":                            store.ListingUnknown,
+		"WHATEVER":                    store.ListingUnknown,
 	}
 	for status, want := range cases {
 		if got := mapSamsungListing(status); got != want {
