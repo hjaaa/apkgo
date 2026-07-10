@@ -114,6 +114,7 @@ func audit(ctx context.Context, cfg map[string]string, _ store.AuditQuery) store
 	}
 	status, _ := info["contentStatus"].(string)
 	res.State, res.Detail = mapSamsungStatus(status)
+	res.Listing = mapSamsungListing(status)
 	if vn, vc, _ := latestBinary(info); vc > 0 {
 		res.VersionName = vn
 		res.VersionCode = int32(vc)
@@ -181,6 +182,23 @@ func mapSamsungStatus(status string) (store.AuditState, string) {
 		return store.AuditUnknown, status + " (not submitted)"
 	default:
 		return store.AuditUnknown, status
+	}
+}
+
+// mapSamsungListing maps Galaxy Store contentStatus to the unified listing state.
+// Conservatively maps observed statuses: FOR_SALE→on_shelf; SUSPENDED/*_SUSPENDED/TERMINATED→off_shelf;
+// REGISTERING/BETA_REGISTERING→not_listed; everything else→unknown (no HTTP probe).
+func mapSamsungListing(status string) store.ListingState {
+	u := strings.ToUpper(strings.TrimSpace(status))
+	switch {
+	case u == "FOR_SALE":
+		return store.ListingOnShelf
+	case u == "SUSPENDED" || strings.HasSuffix(u, "_SUSPENDED") || u == "TERMINATED":
+		return store.ListingOffShelf
+	case u == "REGISTERING" || u == "BETA_REGISTERING":
+		return store.ListingNotListed
+	default:
+		return store.ListingUnknown
 	}
 }
 

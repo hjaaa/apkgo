@@ -30,3 +30,23 @@ func TestMapSamsungStatus(t *testing.T) {
 		}
 	}
 }
+
+func TestMapSamsungListing(t *testing.T) {
+	cases := map[string]store.ListingState{
+		"FOR_SALE":                 store.ListingOnShelf,
+		"SUSPENDED":                store.ListingOffShelf,
+		"TERMINATED":               store.ListingOffShelf,
+		"REGISTERING":              store.ListingNotListed,
+		"BETA_REGISTERING":         store.ListingNotListed,
+		"CONTENT_REVIEW_SUSPENDED": store.ListingOffShelf,
+		"UPDATING":                 store.ListingUnknown,
+		"READY_FOR_SALE":           store.ListingUnknown,
+		"":                         store.ListingUnknown,
+		"WHATEVER":                 store.ListingUnknown,
+	}
+	for status, want := range cases {
+		if got := mapSamsungListing(status); got != want {
+			t.Errorf("mapSamsungListing(%q) = %q, want %q", status, got, want)
+		}
+	}
+}
