@@ -92,12 +92,13 @@ func mapVivoAuditState(status int, unPassReason string) (store.AuditState, strin
 }
 
 // vivoListing maps vivo's app.query.details saleStatus to a unified listing state.
-// nil → unknown (missing field), 0 → not_listed, 1 → on_shelf, 2 → off_shelf, other → unknown.
-func vivoListing(saleStatus *lenientInt) store.ListingState {
-	if saleStatus == nil {
+// invalid (missing field, or a value that didn't decode to an integer) → unknown,
+// 0 → not_listed, 1 → on_shelf, 2 → off_shelf, other → unknown.
+func vivoListing(saleStatus saleStatusField) store.ListingState {
+	if !saleStatus.Valid {
 		return store.ListingUnknown
 	}
-	switch int(*saleStatus) {
+	switch saleStatus.Value {
 	case 0:
 		return store.ListingNotListed
 	case 1:
@@ -564,17 +565,40 @@ func (n *lenientInt) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// saleStatusField decodes vivo's saleStatus field, tracking whether it
+// actually resolved to an integer. vivo is inconsistent about whether this
+// field is quoted, and sometimes serves a blank string or a non-numeric
+// placeholder ("invalid") — Valid stays false in those cases (and when the
+// key is absent), so callers can tell "no usable signal" apart from a real
+// saleStatus of 0.
+type saleStatusField struct {
+	Value int
+	Valid bool
+}
+
+func (f *saleStatusField) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	if s == "" || s == "null" {
+		return nil
+	}
+	if v, err := strconv.Atoi(s); err == nil {
+		f.Value = v
+		f.Valid = true
+	}
+	return nil
+}
+
 // appDetails is the slice of fields apkgo needs from `app.query.details`.
 // vivo returns more (app name in zh, online state, etc.) but we only
 // surface what the doctor / audit paths report.
 type appDetails struct {
-	PackageName  string      `json:"packageName"`
-	AppName      string      `json:"appName"`
-	VersionName  string      `json:"versionName"`
-	VersionCode  string      `json:"versionCode"`
-	Status       lenientInt  `json:"status"` // 审核状态: 1草稿/2待审核/3通过/4不通过/5撤销
-	UnPassReason string      `json:"unPassReason"`
-	SaleStatus   *lenientInt `json:"saleStatus"`
+	PackageName  string          `json:"packageName"`
+	AppName      string          `json:"appName"`
+	VersionName  string          `json:"versionName"`
+	VersionCode  string          `json:"versionCode"`
+	Status       lenientInt      `json:"status"` // 审核状态: 1草稿/2待审核/3通过/4不通过/5撤销
+	UnPassReason string          `json:"unPassReason"`
+	SaleStatus   saleStatusField `json:"saleStatus"`
 }
 
 // queryApp calls the read-only `app.query.details` method. Used by the

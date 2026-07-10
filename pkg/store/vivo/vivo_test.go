@@ -1,26 +1,26 @@
 package vivo
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/KevinGong2013/apkgo/v3/pkg/store"
 )
 
 func TestVivoListing(t *testing.T) {
-	ptr := func(value int) *lenientInt {
-		v := lenientInt(value)
-		return &v
+	valid := func(value int) saleStatusField {
+		return saleStatusField{Value: value, Valid: true}
 	}
 	cases := []struct {
 		name string
-		code *lenientInt
+		code saleStatusField
 		want store.ListingState
 	}{
-		{"missing", nil, store.ListingUnknown},
-		{"not listed", ptr(0), store.ListingNotListed},
-		{"on shelf", ptr(1), store.ListingOnShelf},
-		{"off shelf", ptr(2), store.ListingOffShelf},
-		{"unexpected", ptr(9), store.ListingUnknown},
+		{"missing/invalid", saleStatusField{}, store.ListingUnknown},
+		{"not listed", valid(0), store.ListingNotListed},
+		{"on shelf", valid(1), store.ListingOnShelf},
+		{"off shelf", valid(2), store.ListingOffShelf},
+		{"unexpected", valid(9), store.ListingUnknown},
 	}
 	for _, tc := range cases {
 		if got := vivoListing(tc.code); got != tc.want {
@@ -46,6 +46,33 @@ func TestMapVivoAuditStateIncludesUnPassReason(t *testing.T) {
 		gotState, gotDetail := mapVivoAuditState(tc.status, tc.reason)
 		if gotState != tc.state || gotDetail != tc.detail {
 			t.Errorf("mapVivoAuditState(%d, %q) = (%q, %q), want (%q, %q)", tc.status, tc.reason, gotState, gotDetail, tc.state, tc.detail)
+		}
+	}
+}
+
+// TestVivoAppDetailsDecodeSaleStatus pins that an illegal or missing
+// saleStatus (blank string, non-numeric string, or absent key) decodes to
+// a listing of unknown rather than being silently coerced into the zero
+// value (not_listed) or a real number.
+func TestVivoAppDetailsDecodeSaleStatus(t *testing.T) {
+	cases := []struct {
+		name string
+		json string
+		want store.ListingState
+	}{
+		{"empty string", `{"saleStatus":""}`, store.ListingUnknown},
+		{"invalid string", `{"saleStatus":"invalid"}`, store.ListingUnknown},
+		{"missing", `{}`, store.ListingUnknown},
+		{"zero", `{"saleStatus":0}`, store.ListingNotListed},
+		{"quoted one", `{"saleStatus":"1"}`, store.ListingOnShelf},
+	}
+	for _, tc := range cases {
+		var app appDetails
+		if err := json.Unmarshal([]byte(tc.json), &app); err != nil {
+			t.Fatalf("%s: unmarshal error: %v", tc.name, err)
+		}
+		if got := vivoListing(app.SaleStatus); got != tc.want {
+			t.Errorf("%s: vivoListing = %q, want %q", tc.name, got, tc.want)
 		}
 	}
 }
