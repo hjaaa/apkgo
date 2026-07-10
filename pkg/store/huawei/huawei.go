@@ -119,12 +119,10 @@ func mapHuaweiReleaseState(state int) (store.AuditState, string) {
 		return store.AuditReviewing, fmt.Sprintf("releaseState=%d", state)
 	case 0, 3:
 		return store.AuditApproved, fmt.Sprintf("releaseState=%d", state)
-	case 1, 8, 13:
+	case 1, 8, 9, 13:
 		return store.AuditRejected, fmt.Sprintf("releaseState=%d", state)
 	case 2, 10, 11:
 		return store.AuditWithdrawn, fmt.Sprintf("releaseState=%d", state)
-	case 9:
-		return store.AuditNeedsFix, "下架审核不通过(releaseState=9)"
 	case 7:
 		return store.AuditUnknown, "draft (草稿)"
 	default:
