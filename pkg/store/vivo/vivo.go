@@ -64,6 +64,7 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 	}
 	res.State, res.Detail = mapVivoAuditState(int(app.Status), app.UnPassReason)
 	res.Listing = vivoListing(app.SaleStatus)
+	res.State = applyVivoFirstListing(res.State, res.Listing)
 	res.VersionName = app.VersionName
 	if vc, err := strconv.ParseInt(strings.TrimSpace(app.VersionCode), 10, 32); err == nil {
 		res.VersionCode = int32(vc)
@@ -106,6 +107,16 @@ func vivoListing(saleStatus *lenientInt) store.ListingState {
 	default:
 		return store.ListingUnknown
 	}
+}
+
+// applyVivoFirstListing refines approved to approved_first when the app
+// is not yet listed (saleStatus 0). Only exact match (approved + not_listed)
+// qualifies; missing or on_shelf listing remains as generic approved.
+func applyVivoFirstListing(state store.AuditState, listing store.ListingState) store.AuditState {
+	if state == store.AuditApproved && listing == store.ListingNotListed {
+		return store.AuditApprovedFirst
+	}
+	return state
 }
 
 type Store struct {

@@ -49,3 +49,22 @@ func TestMapVivoAuditStateIncludesUnPassReason(t *testing.T) {
 		}
 	}
 }
+
+func TestApplyVivoFirstListing(t *testing.T) {
+	cases := []struct {
+		state   store.AuditState
+		listing store.ListingState
+		want    store.AuditState
+	}{
+		{store.AuditApproved, store.ListingNotListed, store.AuditApprovedFirst},
+		{store.AuditApproved, store.ListingOnShelf, store.AuditApproved},
+		{store.AuditApproved, store.ListingUnknown, store.AuditApproved},
+		{store.AuditReviewing, store.ListingNotListed, store.AuditReviewing},
+		{store.AuditRejected, store.ListingNotListed, store.AuditRejected},
+	}
+	for _, tc := range cases {
+		if got := applyVivoFirstListing(tc.state, tc.listing); got != tc.want {
+			t.Errorf("applyVivoFirstListing(%q, %q) = %q, want %q", tc.state, tc.listing, got, tc.want)
+		}
+	}
+}
