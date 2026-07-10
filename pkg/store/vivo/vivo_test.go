@@ -63,8 +63,11 @@ func TestVivoAppDetailsDecodeSaleStatus(t *testing.T) {
 		{"empty string", `{"saleStatus":""}`, store.ListingUnknown},
 		{"invalid string", `{"saleStatus":"invalid"}`, store.ListingUnknown},
 		{"missing", `{}`, store.ListingUnknown},
+		{"null", `{"saleStatus":null}`, store.ListingUnknown},
 		{"zero", `{"saleStatus":0}`, store.ListingNotListed},
 		{"quoted one", `{"saleStatus":"1"}`, store.ListingOnShelf},
+		{"unexpected number", `{"saleStatus":9}`, store.ListingUnknown},
+		{"unexpected quoted number", `{"saleStatus":"9"}`, store.ListingUnknown},
 	}
 	for _, tc := range cases {
 		var app appDetails
@@ -92,6 +95,42 @@ func TestApplyVivoFirstListing(t *testing.T) {
 	for _, tc := range cases {
 		if got := applyVivoFirstListing(tc.state, tc.listing); got != tc.want {
 			t.Errorf("applyVivoFirstListing(%q, %q) = %q, want %q", tc.state, tc.listing, got, tc.want)
+		}
+	}
+}
+
+// TestVivoApprovedWithAbnormalSaleStatusNeverApprovedFirst pins the
+// end-to-end combination that audit() drives: for an approved app
+// (status=3), an abnormal saleStatus (null / blank / non-numeric /
+// missing / an out-of-range enum) must decode to listing unknown, and
+// applyVivoFirstListing must never promote that to approved_first —
+// approved_first requires a confirmed not_listed signal, not the absence
+// of one.
+func TestVivoApprovedWithAbnormalSaleStatusNeverApprovedFirst(t *testing.T) {
+	cases := []struct {
+		name string
+		json string
+	}{
+		{"null", `{"packageName":"com.example.app","status":3,"saleStatus":null}`},
+		{"empty string", `{"packageName":"com.example.app","status":3,"saleStatus":""}`},
+		{"invalid string", `{"packageName":"com.example.app","status":3,"saleStatus":"invalid"}`},
+		{"missing", `{"packageName":"com.example.app","status":3}`},
+		{"unexpected enum", `{"packageName":"com.example.app","status":3,"saleStatus":9}`},
+	}
+	for _, tc := range cases {
+		var app appDetails
+		if err := json.Unmarshal([]byte(tc.json), &app); err != nil {
+			t.Fatalf("%s: unmarshal error: %v", tc.name, err)
+		}
+		// Same order as audit() in vivo.go.
+		state, _ := mapVivoAuditState(int(app.Status), app.UnPassReason)
+		listing := vivoListing(app.SaleStatus)
+		state = applyVivoFirstListing(state, listing)
+		if state != store.AuditApproved {
+			t.Errorf("%s: State = %q, want approved (never approved_first)", tc.name, state)
+		}
+		if listing != store.ListingUnknown {
+			t.Errorf("%s: Listing = %q, want unknown", tc.name, listing)
 		}
 	}
 }
