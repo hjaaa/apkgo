@@ -47,9 +47,11 @@ Listing precision varies by store: Huawei reports all three states directly,
 except `releaseState=9` (下架审核不通过, a rejected takedown request), which is
 inferred from the on-shelf version signal and degrades to unknown when that
 signal is absent; vivo maps `saleStatus` 0/1/2 to not-listed/on-shelf/off-shelf;
-OPPO prefers `audit_status` 0/111/222 and falls back to conservative label
-matching; Samsung maps direct content states and uses a SALE probe for
-approved versions; Honor weakly distinguishes not-listed/on-shelf from
+OPPO prefers the dedicated `state` field (1/2), then `audit_status` 0/111/222,
+then conservative label matching; Samsung maps direct content states (only the
+SALE-side `SUSPENDED`/`TERMINATED` imply off-shelf; review-stage `*_SUSPENDED`
+degrades to unknown) and uses a SALE probe for approved versions; Honor weakly
+distinguishes not-listed/on-shelf from
 empty/non-empty `releaseInfo` (a missing `releaseInfo` key degrades to
 unknown) but cannot identify off-shelf. Xiaomi only distinguishes on-shelf vs
 not-listed, and Tencent uses its public detail page as a best-effort
