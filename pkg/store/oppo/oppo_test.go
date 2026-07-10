@@ -26,12 +26,16 @@ func TestOppoListing(t *testing.T) {
 }
 
 func TestMapOppoAuditNeedsFix(t *testing.T) {
-	got, _ := mapOppoAudit("待整改", "")
-	if got != store.AuditNeedsFix {
-		t.Errorf("mapOppoAudit(待整改) = %q, want %q", got, store.AuditNeedsFix)
+	cases := map[string]store.AuditState{
+		"待整改": store.AuditNeedsFix,
+		"已冻结": store.AuditNeedsFix,
+		"已下架": store.AuditWithdrawn,
+		"已撤销": store.AuditWithdrawn,
+		"已上线": store.AuditApproved,
 	}
-
-	if got, _ := mapOppoAudit("已上线", ""); got != store.AuditApproved {
-		t.Errorf("mapOppoAudit(已上线) = %q, want %q", got, store.AuditApproved)
+	for name, want := range cases {
+		if got, _ := mapOppoAudit(name, ""); got != want {
+			t.Errorf("mapOppoAudit(%q) = %q, want %q", name, got, want)
+		}
 	}
 }

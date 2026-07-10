@@ -74,7 +74,7 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 // surfaced in Detail so the operator sees ground truth regardless.
 func mapOppoAudit(name, refuse string) (store.AuditState, string) {
 	switch {
-	case containsAny(name, "整改"):
+	case containsAny(name, "整改", "冻结"):
 		return store.AuditNeedsFix, name
 	case containsAny(name, "拒绝", "不通过", "驳回", "失败", "打回"):
 		if refuse != "" {
@@ -83,7 +83,7 @@ func mapOppoAudit(name, refuse string) (store.AuditState, string) {
 		return store.AuditRejected, name
 	case containsAny(name, "上线", "上架", "已发布", "通过"):
 		return store.AuditApproved, name
-	case containsAny(name, "下架", "撤销", "冻结"):
+	case containsAny(name, "下架", "撤销"):
 		return store.AuditWithdrawn, name
 	case containsAny(name, "审核", "待审", "审查", "送审"):
 		return store.AuditReviewing, name
