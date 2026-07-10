@@ -39,3 +39,27 @@ func TestMapOppoAuditNeedsFix(t *testing.T) {
 		}
 	}
 }
+
+func TestAppendOppoAuditExtra(t *testing.T) {
+	rejected := oppoAuditExtra{
+		RefuseAdvice:         "补充隐私政策",
+		BusinessRefuseReason: "资质不完整",
+		RefuseFile:           "https://example.com/refuse.png",
+		FreezeReason:         "不应出现在驳回态",
+		FreezeAdvice:         "不应出现在驳回态",
+	}
+	wantRejected := "审核不通过: 主理由; refuse_advice=补充隐私政策; business_refuse_reason=资质不完整; refuse_file=https://example.com/refuse.png"
+	if got := appendOppoAuditExtra(store.AuditRejected, "审核不通过: 主理由", rejected); got != wantRejected {
+		t.Fatalf("rejected detail = %q, want %q", got, wantRejected)
+	}
+
+	frozen := oppoAuditExtra{FreezeReason: "违规冻结", FreezeAdvice: "完成整改后申诉", RefuseAdvice: "不应出现"}
+	wantFrozen := "已冻结; freeze_reason=违规冻结; freeze_advice=完成整改后申诉"
+	if got := appendOppoAuditExtra(store.AuditNeedsFix, "已冻结", frozen); got != wantFrozen {
+		t.Fatalf("freeze detail = %q, want %q", got, wantFrozen)
+	}
+
+	if got := appendOppoAuditExtra(store.AuditApproved, "已上线", rejected); got != "已上线" {
+		t.Fatalf("approved detail changed: %q", got)
+	}
+}

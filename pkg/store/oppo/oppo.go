@@ -59,6 +59,13 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 		return res
 	}
 	res.State, res.Detail = mapOppoAudit(app.AuditStatusName, app.RefuseReason)
+	res.Detail = appendOppoAuditExtra(res.State, res.Detail, oppoAuditExtra{
+		RefuseAdvice:         app.RefuseAdvice,
+		BusinessRefuseReason: app.BusinessRefuseReason,
+		RefuseFile:           app.RefuseFile,
+		FreezeReason:         app.FreezeReason,
+		FreezeAdvice:         app.FreezeAdvice,
+	})
 	res.Listing = oppoListing(app.AuditStatusName)
 	res.VersionName = app.VersionName
 	if vc, err := strconv.ParseInt(strings.TrimSpace(app.VersionCode), 10, 32); err == nil {
@@ -118,6 +125,58 @@ func containsAny(s string, subs ...string) bool {
 		}
 	}
 	return false
+}
+
+// oppoAuditExtra carries OPPO's supplementary audit fields beyond the main
+// audit_status_name/refuse_reason pair, so appendOppoAuditExtra can append
+// the state-appropriate subset to Detail.
+type oppoAuditExtra struct {
+	RefuseAdvice         string
+	BusinessRefuseReason string
+	RefuseFile           string
+	FreezeReason         string
+	FreezeAdvice         string
+}
+
+// appendOppoAuditExtra appends state-specific reason fields to detail:
+// rejected gets the refuse group, needs_fix gets the freeze group, other
+// states are returned unchanged. Empty values are skipped.
+func appendOppoAuditExtra(state store.AuditState, detail string, extra oppoAuditExtra) string {
+	parts := make([]string, 0, 4)
+	if detail = strings.TrimSpace(detail); detail != "" {
+		parts = append(parts, detail)
+	}
+	var fields []struct {
+		name  string
+		value string
+	}
+	switch state {
+	case store.AuditRejected:
+		fields = []struct {
+			name  string
+			value string
+		}{
+			{"refuse_advice", extra.RefuseAdvice},
+			{"business_refuse_reason", extra.BusinessRefuseReason},
+			{"refuse_file", extra.RefuseFile},
+		}
+	case store.AuditNeedsFix:
+		fields = []struct {
+			name  string
+			value string
+		}{
+			{"freeze_reason", extra.FreezeReason},
+			{"freeze_advice", extra.FreezeAdvice},
+		}
+	default:
+		return strings.Join(parts, "; ")
+	}
+	for _, field := range fields {
+		if value := strings.TrimSpace(field.value); value != "" {
+			parts = append(parts, field.name+"="+value)
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 // errEnvelope only carries `errno` so it can be embedded in any response
@@ -579,27 +638,32 @@ func (s *Store) sign(data url.Values) url.Values {
 // Data types
 
 type appData struct {
-	AppName           string `json:"app_name"`
-	SecondCategoryID  string `json:"second_category_id"`
-	ThirdCategoryID   string `json:"third_category_id"`
-	Summary           string `json:"summary"`
-	DetailDesc        string `json:"detail_desc"`
-	PrivacySourceURL  string `json:"privacy_source_url"`
-	IconURL           string `json:"icon_url"`
-	PicURL            string `json:"pic_url"`
-	CopyrightURL      string `json:"copyright_url"`
-	ElectronicCertURL string `json:"electronic_cert_url"` // 电子版权证书; copyright_url 已弃用,改用此字段
-	BusinessUsername  string `json:"business_username"`
-	BusinessEmail     string `json:"business_email"`
-	BusinessMobile    string `json:"business_mobile"`
-	AgeLevel          string `json:"age_level"`
-	AdaptiveEquipment string `json:"adaptive_equipment"`
-	CustomerContact   string `json:"customer_contact"`
-	AuditStatus       string `json:"audit_status"`      // numeric code (审核状态对照表 not published in the API传包 docs)
-	AuditStatusName   string `json:"audit_status_name"` // human label, e.g. "上线" / "审核中"
-	RefuseReason      string `json:"refuse_reason"`
-	VersionName       string `json:"version_name"` // 版本名称
-	VersionCode       string `json:"version_code"` // 版本号 (returned as a string)
+	AppName              string `json:"app_name"`
+	SecondCategoryID     string `json:"second_category_id"`
+	ThirdCategoryID      string `json:"third_category_id"`
+	Summary              string `json:"summary"`
+	DetailDesc           string `json:"detail_desc"`
+	PrivacySourceURL     string `json:"privacy_source_url"`
+	IconURL              string `json:"icon_url"`
+	PicURL               string `json:"pic_url"`
+	CopyrightURL         string `json:"copyright_url"`
+	ElectronicCertURL    string `json:"electronic_cert_url"` // 电子版权证书; copyright_url 已弃用,改用此字段
+	BusinessUsername     string `json:"business_username"`
+	BusinessEmail        string `json:"business_email"`
+	BusinessMobile       string `json:"business_mobile"`
+	AgeLevel             string `json:"age_level"`
+	AdaptiveEquipment    string `json:"adaptive_equipment"`
+	CustomerContact      string `json:"customer_contact"`
+	AuditStatus          string `json:"audit_status"`      // numeric code (审核状态对照表 not published in the API传包 docs)
+	AuditStatusName      string `json:"audit_status_name"` // human label, e.g. "上线" / "审核中"
+	RefuseReason         string `json:"refuse_reason"`
+	RefuseAdvice         string `json:"refuse_advice"`
+	BusinessRefuseReason string `json:"business_refuse_reason"`
+	RefuseFile           string `json:"refuse_file"`
+	FreezeReason         string `json:"freeze_reason"`
+	FreezeAdvice         string `json:"freeze_advice"`
+	VersionName          string `json:"version_name"` // 版本名称
+	VersionCode          string `json:"version_code"` // 版本号 (returned as a string)
 }
 
 type uploadResultData struct {
