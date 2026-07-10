@@ -92,9 +92,10 @@ func auditByRelease(ctx context.Context, s *Store, appID, releaseID string, res 
 	var resp struct {
 		honorResp
 		Data []struct {
-			ReleaseID    string `json:"releaseId"`
-			AuditResult  int    `json:"auditResult"`
-			AuditMessage string `json:"auditMessage"`
+			ReleaseID       string   `json:"releaseId"`
+			AuditResult     int      `json:"auditResult"`
+			AuditMessage    string   `json:"auditMessage"`
+			AuditAttachment []string `json:"auditAttachment"`
 		} `json:"data"`
 	}
 	httpResp, err := s.client.R().
@@ -122,6 +123,7 @@ func auditByRelease(ctx context.Context, s *Store, appID, releaseID string, res 
 	}
 	item := resp.Data[0]
 	res.State, res.Detail = mapHonorAudit(item.AuditResult, item.AuditMessage)
+	res.Detail = appendHonorAuditAttachments(res.State, res.Detail, item.AuditAttachment)
 }
 
 // auditLiveVersionOnly reports the already-on-shelf version via
@@ -156,6 +158,26 @@ func auditLiveVersionOnly(ctx context.Context, s *Store, appID string, res *stor
 	}
 	res.LiveVersionName = resp.Data.ReleaseInfo.VersionName
 	res.LiveVersionCode = resp.Data.ReleaseInfo.VersionCode
+}
+
+// appendHonorAuditAttachments appends honor's official auditAttachment URLs
+// to Detail as "attachment=<url>" segments, only when the state is rejected
+// — attachments are only meaningful alongside a rejection reason. Blank
+// entries are skipped and URLs are left unmodified.
+func appendHonorAuditAttachments(state store.AuditState, detail string, attachments []string) string {
+	if state != store.AuditRejected {
+		return detail
+	}
+	parts := make([]string, 0, len(attachments)+1)
+	if detail = strings.TrimSpace(detail); detail != "" {
+		parts = append(parts, detail)
+	}
+	for _, attachment := range attachments {
+		if attachment = strings.TrimSpace(attachment); attachment != "" {
+			parts = append(parts, "attachment="+attachment)
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 // mapHonorAudit maps an auditResult code to the unified state. Shared by

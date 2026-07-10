@@ -26,7 +26,7 @@ func TestAuditByReleaseUsesGetAuditResult(t *testing.T) {
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &gotBody)
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"code":0,"data":[{"releaseId":"rel-1","auditResult":2,"auditMessage":"存在开发者同版本或高版本任务"}]}`)
+		io.WriteString(w, `{"code":0,"data":[{"releaseId":"rel-1","auditResult":2,"auditMessage":"存在开发者同版本或高版本任务","auditAttachment":["https://example.com/review-1.webp","","https://example.com/review-2.webp"]}]}`)
 	}))
 	defer srv.Close()
 
@@ -51,8 +51,22 @@ func TestAuditByReleaseUsesGetAuditResult(t *testing.T) {
 	if res.State != store.AuditRejected {
 		t.Fatalf("State = %q, want rejected", res.State)
 	}
-	if res.Detail != "存在开发者同版本或高版本任务" {
-		t.Fatalf("Detail = %q, want the honor rejection message", res.Detail)
+	wantDetail := "存在开发者同版本或高版本任务; attachment=https://example.com/review-1.webp; attachment=https://example.com/review-2.webp"
+	if res.Detail != wantDetail {
+		t.Fatalf("Detail = %q, want %q", res.Detail, wantDetail)
+	}
+}
+
+// TestAppendHonorAuditAttachmentsOnlyForRejected pins that attachments are
+// only appended to Detail when the state is rejected, and that blank
+// attachment entries are skipped.
+func TestAppendHonorAuditAttachmentsOnlyForRejected(t *testing.T) {
+	attachments := []string{"https://example.com/review.webp"}
+	if got := appendHonorAuditAttachments(store.AuditApproved, "", attachments); got != "" {
+		t.Fatalf("approved detail = %q, want empty", got)
+	}
+	if got := appendHonorAuditAttachments(store.AuditRejected, "", []string{" ", "https://example.com/review.webp"}); got != "attachment=https://example.com/review.webp" {
+		t.Fatalf("rejected detail = %q", got)
 	}
 }
 
