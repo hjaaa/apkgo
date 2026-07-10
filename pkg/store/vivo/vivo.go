@@ -63,7 +63,7 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 		return res
 	}
 	res.State, res.Detail = mapVivoAuditState(int(app.Status), app.UnPassReason)
-	res.Listing = store.ListingUnknown // vivo online-state field/value is unverified; degrade safely.
+	res.Listing = vivoListing(app.SaleStatus)
 	res.VersionName = app.VersionName
 	if vc, err := strconv.ParseInt(strings.TrimSpace(app.VersionCode), 10, 32); err == nil {
 		res.VersionCode = int32(vc)
@@ -90,10 +90,22 @@ func mapVivoAuditState(status int, unPassReason string) (store.AuditState, strin
 	}
 }
 
-// vivoListing maps vivo's app.query.details online-state to a unified listing state.
-// The source field/value is still unverified, so every input degrades to unknown.
-func vivoListing(onlineState int) store.ListingState {
-	return store.ListingUnknown
+// vivoListing maps vivo's app.query.details saleStatus to a unified listing state.
+// nil → unknown (missing field), 0 → not_listed, 1 → on_shelf, 2 → off_shelf, other → unknown.
+func vivoListing(saleStatus *lenientInt) store.ListingState {
+	if saleStatus == nil {
+		return store.ListingUnknown
+	}
+	switch int(*saleStatus) {
+	case 0:
+		return store.ListingNotListed
+	case 1:
+		return store.ListingOnShelf
+	case 2:
+		return store.ListingOffShelf
+	default:
+		return store.ListingUnknown
+	}
 }
 
 type Store struct {
@@ -545,12 +557,13 @@ func (n *lenientInt) UnmarshalJSON(b []byte) error {
 // vivo returns more (app name in zh, online state, etc.) but we only
 // surface what the doctor / audit paths report.
 type appDetails struct {
-	PackageName  string     `json:"packageName"`
-	AppName      string     `json:"appName"`
-	VersionName  string     `json:"versionName"`
-	VersionCode  string     `json:"versionCode"`
-	Status       lenientInt `json:"status"` // 审核状态: 1草稿/2待审核/3通过/4不通过/5撤销
-	UnPassReason string     `json:"unPassReason"`
+	PackageName  string      `json:"packageName"`
+	AppName      string      `json:"appName"`
+	VersionName  string      `json:"versionName"`
+	VersionCode  string      `json:"versionCode"`
+	Status       lenientInt  `json:"status"` // 审核状态: 1草稿/2待审核/3通过/4不通过/5撤销
+	UnPassReason string      `json:"unPassReason"`
+	SaleStatus   *lenientInt `json:"saleStatus"`
 }
 
 // queryApp calls the read-only `app.query.details` method. Used by the
