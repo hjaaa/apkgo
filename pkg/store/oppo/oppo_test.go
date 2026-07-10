@@ -7,20 +7,23 @@ import (
 )
 
 func TestOppoListing(t *testing.T) {
-	cases := map[string]store.ListingState{
-		"已上线":   store.ListingOnShelf,
-		"上架成功":  store.ListingOnShelf,
-		"已发布":   store.ListingOnShelf,
-		"已下架":   store.ListingOffShelf,
-		"已冻结":   store.ListingOffShelf,
-		"审核中":   store.ListingUnknown,
-		"待上架":   store.ListingUnknown,
-		"上架审核中": store.ListingUnknown,
-		"":      store.ListingUnknown,
+	cases := []struct {
+		code string
+		name string
+		want store.ListingState
+	}{
+		{"0", "", store.ListingNotListed},
+		{"111", "审核中", store.ListingOnShelf},
+		{"222", "已上线", store.ListingOffShelf},
+		{"999", "已上线", store.ListingOnShelf},
+		{"", "已下架", store.ListingOffShelf},
+		{"", "待上架", store.ListingUnknown},
+		{"", "上架审核中", store.ListingUnknown},
+		{"999", "", store.ListingUnknown},
 	}
-	for name, want := range cases {
-		if got := oppoListing(name); got != want {
-			t.Errorf("oppoListing(%q) = %q, want %q", name, got, want)
+	for _, tc := range cases {
+		if got := oppoListing(tc.code, tc.name); got != tc.want {
+			t.Errorf("oppoListing(%q, %q) = %q, want %q", tc.code, tc.name, got, tc.want)
 		}
 	}
 }

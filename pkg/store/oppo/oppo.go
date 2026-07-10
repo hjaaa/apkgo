@@ -66,7 +66,7 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 		FreezeReason:         app.FreezeReason,
 		FreezeAdvice:         app.FreezeAdvice,
 	})
-	res.Listing = oppoListing(app.AuditStatusName)
+	res.Listing = oppoListing(app.AuditStatus, app.AuditStatusName)
 	res.VersionName = app.VersionName
 	if vc, err := strconv.ParseInt(strings.TrimSpace(app.VersionCode), 10, 32); err == nil {
 		res.VersionCode = int32(vc)
@@ -101,9 +101,18 @@ func mapOppoAudit(name, refuse string) (store.AuditState, string) {
 	}
 }
 
-// oppoListing 从 app/info 的 audit_status_name 关键词推导上下架状态。
-// OPPO 未公开稳定数字码表，因此这里只做保守的关键词软匹配。
-func oppoListing(name string) store.ListingState {
+// oppoListing maps OPPO's numeric audit_status code and label to listing state.
+// Numeric codes take priority (0→not_listed, 111→on_shelf, 222→off_shelf),
+// then falls back to keyword matching on the label.
+func oppoListing(auditStatus, name string) store.ListingState {
+	switch strings.TrimSpace(auditStatus) {
+	case "0":
+		return store.ListingNotListed
+	case "111":
+		return store.ListingOnShelf
+	case "222":
+		return store.ListingOffShelf
+	}
 	switch {
 	// 待上架 / 上架审核中 等待上架类标签本身含「上架」子串，但应用尚未在架，
 	// 必须先于下面的「上架」宽匹配拦截，否则会把待发布状态误判为 on_shelf。
