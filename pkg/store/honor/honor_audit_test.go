@@ -176,6 +176,86 @@ func TestSubmitAuditReturnsReleaseID(t *testing.T) {
 	}
 }
 
+// honorMultiplexServer routes get-app-detail (GET) and get-audit-result
+// (POST) to the given canned JSON bodies, mirroring the real audit() flow
+// where both endpoints are hit against the same publish-base client.
+func honorMultiplexServer(t *testing.T, appDetailBody, auditResultBody string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/openapi/v1/publish/get-app-detail":
+			io.WriteString(w, appDetailBody)
+		case "/openapi/v1/publish/get-audit-result":
+			io.WriteString(w, auditResultBody)
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+}
+
+// TestAuditWithReleaseIDDegradesListingForMissingReleaseInfo pins the
+// combination audit() drives when q.ExternalID is set but get-app-detail
+// has no releaseInfo key at all (data:{}): populateHonorLiveVersion leaves
+// Listing at unknown, so even though get-audit-result reports an approved
+// review, applyHonorFirstListing must not refine it to approved_first —
+// an unknown listing signal is not a confirmed not_listed signal.
+//
+// New(cfg) is not used here (it calls honor's hardcoded OAuth endpoint,
+// which httptest can't intercept), so this strings together
+// populateHonorLiveVersion + auditByRelease + applyHonorFirstListing in
+// the same order audit() calls them, against a Store built directly with
+// the test server's base URL — the same pattern the other tests in this
+// file already use.
+func TestAuditWithReleaseIDDegradesListingForMissingReleaseInfo(t *testing.T) {
+	srv := honorMultiplexServer(t,
+		`{"code":0,"data":{}}`,
+		`{"code":0,"data":[{"releaseId":"rel-1","auditResult":1}]}`,
+	)
+	defer srv.Close()
+
+	s := &Store{client: resty.New().SetBaseURL(srv.URL).SetHeader("Content-Type", "application/json")}
+	var res store.AuditResult
+	res.Listing = store.ListingUnknown
+	_ = populateHonorLiveVersion(context.Background(), s, "123", &res)
+	auditByRelease(context.Background(), s, "123", "rel-1", &res)
+	res.State = applyHonorFirstListing(res.State, res.Listing)
+
+	if res.State != store.AuditApproved {
+		t.Fatalf("State = %q, want approved (unknown listing must not become approved_first)", res.State)
+	}
+	if res.Listing != store.ListingUnknown {
+		t.Fatalf("Listing = %q, want unknown", res.Listing)
+	}
+}
+
+// TestAuditWithReleaseIDPromotesApprovedFirstForEmptyReleaseInfo pins the
+// counterpart: get-app-detail returns a present-but-empty releaseInfo
+// (data:{"releaseInfo":{}}), which populateHonorLiveVersion reads as a
+// confirmed not_listed signal — so an approved get-audit-result outcome
+// is refined to approved_first.
+func TestAuditWithReleaseIDPromotesApprovedFirstForEmptyReleaseInfo(t *testing.T) {
+	srv := honorMultiplexServer(t,
+		`{"code":0,"data":{"releaseInfo":{}}}`,
+		`{"code":0,"data":[{"releaseId":"rel-1","auditResult":1}]}`,
+	)
+	defer srv.Close()
+
+	s := &Store{client: resty.New().SetBaseURL(srv.URL).SetHeader("Content-Type", "application/json")}
+	var res store.AuditResult
+	res.Listing = store.ListingUnknown
+	_ = populateHonorLiveVersion(context.Background(), s, "123", &res)
+	auditByRelease(context.Background(), s, "123", "rel-1", &res)
+	res.State = applyHonorFirstListing(res.State, res.Listing)
+
+	if res.State != store.AuditApprovedFirst {
+		t.Fatalf("State = %q, want approved_first", res.State)
+	}
+	if res.Listing != store.ListingNotListed {
+		t.Fatalf("Listing = %q, want not_listed", res.Listing)
+	}
+}
+
 func TestApplyHonorFirstListing(t *testing.T) {
 	cases := []struct {
 		state   store.AuditState
