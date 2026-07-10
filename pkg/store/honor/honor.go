@@ -73,16 +73,18 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 		}
 	}
 	res.Listing = store.ListingUnknown
-	liveErr := populateHonorLiveVersion(ctx, s, appID, &res)
 	if q.ExternalID != "" {
-		// Listing enrichment is best-effort; a live-version failure must not hide
-		// the exact submission result from get-audit-result.
+		// get-audit-result is the authoritative lookup and must run first on
+		// the shared context: the listing enrichment below is best-effort, and
+		// neither its failure nor a stalled get-app-detail eating the context
+		// budget may hide the exact submission result.
 		auditByRelease(ctx, s, appID, q.ExternalID, &res)
+		_ = populateHonorLiveVersion(ctx, s, appID, &res)
 		res.State = applyHonorFirstListing(res.State, res.Listing)
 		return res
 	}
-	if liveErr != nil {
-		res.Error = liveErr.Error()
+	if err := populateHonorLiveVersion(ctx, s, appID, &res); err != nil {
+		res.Error = err.Error()
 	}
 	return res
 }

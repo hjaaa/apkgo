@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-resty/resty/v2"
 
@@ -203,7 +204,7 @@ func honorMultiplexServer(t *testing.T, appDetailBody, auditResultBody string) *
 //
 // New(cfg) is not used here (it calls honor's hardcoded OAuth endpoint,
 // which httptest can't intercept), so this strings together
-// populateHonorLiveVersion + auditByRelease + applyHonorFirstListing in
+// auditByRelease + populateHonorLiveVersion + applyHonorFirstListing in
 // the same order audit() calls them, against a Store built directly with
 // the test server's base URL — the same pattern the other tests in this
 // file already use.
@@ -217,8 +218,8 @@ func TestAuditWithReleaseIDDegradesListingForMissingReleaseInfo(t *testing.T) {
 	s := &Store{client: resty.New().SetBaseURL(srv.URL).SetHeader("Content-Type", "application/json")}
 	var res store.AuditResult
 	res.Listing = store.ListingUnknown
-	_ = populateHonorLiveVersion(context.Background(), s, "123", &res)
 	auditByRelease(context.Background(), s, "123", "rel-1", &res)
+	_ = populateHonorLiveVersion(context.Background(), s, "123", &res)
 	res.State = applyHonorFirstListing(res.State, res.Listing)
 
 	if res.State != store.AuditApproved {
@@ -244,8 +245,8 @@ func TestAuditWithReleaseIDPromotesApprovedFirstForEmptyReleaseInfo(t *testing.T
 	s := &Store{client: resty.New().SetBaseURL(srv.URL).SetHeader("Content-Type", "application/json")}
 	var res store.AuditResult
 	res.Listing = store.ListingUnknown
-	_ = populateHonorLiveVersion(context.Background(), s, "123", &res)
 	auditByRelease(context.Background(), s, "123", "rel-1", &res)
+	_ = populateHonorLiveVersion(context.Background(), s, "123", &res)
 	res.State = applyHonorFirstListing(res.State, res.Listing)
 
 	if res.State != store.AuditApprovedFirst {
@@ -253,6 +254,45 @@ func TestAuditWithReleaseIDPromotesApprovedFirstForEmptyReleaseInfo(t *testing.T
 	}
 	if res.Listing != store.ListingNotListed {
 		t.Fatalf("Listing = %q, want not_listed", res.Listing)
+	}
+}
+
+// TestAuditWithReleaseIDSurvivesStalledAppDetail pins the ExternalID branch's
+// call order: get-audit-result runs before the best-effort get-app-detail
+// enrichment, so a live-version endpoint that stalls until the shared context
+// expires only costs the listing (degrades to unknown) — it can neither hide
+// the exact submission result nor surface an error.
+func TestAuditWithReleaseIDSurvivesStalledAppDetail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/openapi/v1/publish/get-app-detail":
+			<-r.Context().Done() // stall until the caller's context gives up
+		case "/openapi/v1/publish/get-audit-result":
+			io.WriteString(w, `{"code":0,"data":[{"releaseId":"rel-1","auditResult":1}]}`)
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	s := &Store{client: resty.New().SetBaseURL(srv.URL).SetHeader("Content-Type", "application/json")}
+	var res store.AuditResult
+	res.Listing = store.ListingUnknown
+	auditByRelease(ctx, s, "123", "rel-1", &res)
+	_ = populateHonorLiveVersion(ctx, s, "123", &res)
+	res.State = applyHonorFirstListing(res.State, res.Listing)
+
+	if res.State != store.AuditApproved {
+		t.Fatalf("State = %q, want approved despite stalled get-app-detail", res.State)
+	}
+	if res.Listing != store.ListingUnknown {
+		t.Fatalf("Listing = %q, want unknown when enrichment times out", res.Listing)
+	}
+	if res.Error != "" {
+		t.Fatalf("Error = %q, want empty (enrichment is best-effort)", res.Error)
 	}
 }
 
