@@ -8,22 +8,30 @@ import (
 
 func TestOppoListing(t *testing.T) {
 	cases := []struct {
-		code string
-		name string
-		want store.ListingState
+		state string
+		code  string
+		name  string
+		want  store.ListingState
 	}{
-		{"0", "", store.ListingNotListed},
-		{"111", "审核中", store.ListingOnShelf},
-		{"222", "已上线", store.ListingOffShelf},
-		{"999", "已上线", store.ListingOnShelf},
-		{"", "已下架", store.ListingOffShelf},
-		{"", "待上架", store.ListingUnknown},
-		{"", "上架审核中", store.ListingUnknown},
-		{"999", "", store.ListingUnknown},
+		{"", "0", "", store.ListingNotListed},
+		{"", "111", "审核中", store.ListingOnShelf},
+		{"", "222", "已上线", store.ListingOffShelf},
+		{"", "999", "已上线", store.ListingOnShelf},
+		{"", "", "已下架", store.ListingOffShelf},
+		{"", "", "待上架", store.ListingUnknown},
+		{"", "", "上架审核中", store.ListingUnknown},
+		{"", "999", "", store.ListingUnknown},
+		// 在架应用的更新在审核中:audit_status 是审核码、标签为审核类文案,
+		// 此时专用 state 字段仍为 1,必须报 on_shelf 而非 unknown。
+		{"1", "999", "审核中", store.ListingOnShelf},
+		{"2", "999", "审核中", store.ListingOffShelf},
+		// state 与 audit_status 冲突时,以专用 listing 字段为准。
+		{"1", "222", "", store.ListingOnShelf},
+		{"0", "999", "", store.ListingUnknown},
 	}
 	for _, tc := range cases {
-		if got := oppoListing(tc.code, tc.name); got != tc.want {
-			t.Errorf("oppoListing(%q, %q) = %q, want %q", tc.code, tc.name, got, tc.want)
+		if got := oppoListing(tc.state, tc.code, tc.name); got != tc.want {
+			t.Errorf("oppoListing(%q, %q, %q) = %q, want %q", tc.state, tc.code, tc.name, got, tc.want)
 		}
 	}
 }

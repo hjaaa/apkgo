@@ -66,7 +66,7 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 		FreezeReason:         app.FreezeReason,
 		FreezeAdvice:         app.FreezeAdvice,
 	})
-	res.Listing = oppoListing(app.AuditStatus, app.AuditStatusName)
+	res.Listing = oppoListing(app.State, app.AuditStatus, app.AuditStatusName)
 	res.VersionName = app.VersionName
 	if vc, err := strconv.ParseInt(strings.TrimSpace(app.VersionCode), 10, 32); err == nil {
 		res.VersionCode = int32(vc)
@@ -101,10 +101,19 @@ func mapOppoAudit(name, refuse string) (store.AuditState, string) {
 	}
 }
 
-// oppoListing maps OPPO's numeric audit_status code and label to listing state.
-// Numeric codes take priority (0→not_listed, 111→on_shelf, 222→off_shelf),
-// then falls back to keyword matching on the label.
-func oppoListing(auditStatus, name string) store.ListingState {
+// oppoListing maps OPPO's listing signals to the unified state. The dedicated
+// state field takes priority (1→on_shelf, 2→off_shelf), then the numeric
+// audit_status code (0→not_listed, 111→on_shelf, 222→off_shelf), then keyword
+// matching on the label — so an already-listed app whose update is under
+// review (audit_status is a review code, label like "审核中") still reports
+// on_shelf instead of unknown.
+func oppoListing(state, auditStatus, name string) store.ListingState {
+	switch strings.TrimSpace(state) {
+	case "1":
+		return store.ListingOnShelf
+	case "2":
+		return store.ListingOffShelf
+	}
 	switch strings.TrimSpace(auditStatus) {
 	case "0":
 		return store.ListingNotListed
@@ -663,6 +672,7 @@ type appData struct {
 	AgeLevel             string `json:"age_level"`
 	AdaptiveEquipment    string `json:"adaptive_equipment"`
 	CustomerContact      string `json:"customer_contact"`
+	State                string `json:"state"`             // listing state: 1=在架, 2=下架 (see docs/store-api-capability.md)
 	AuditStatus          string `json:"audit_status"`      // numeric code (审核状态对照表 not published in the API传包 docs)
 	AuditStatusName      string `json:"audit_status_name"` // human label, e.g. "上线" / "审核中"
 	RefuseReason         string `json:"refuse_reason"`
