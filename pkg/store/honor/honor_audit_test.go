@@ -96,6 +96,45 @@ func TestAuditLiveVersionOnlyDoesNotClaimReviewState(t *testing.T) {
 	if res.LiveVersionName != "1.0.39" || res.LiveVersionCode != 39 {
 		t.Fatalf("LiveVersion = %q/%d, want 1.0.39/39", res.LiveVersionName, res.LiveVersionCode)
 	}
+	if res.Listing != store.ListingOnShelf {
+		t.Fatalf("Listing = %q, want on_shelf", res.Listing)
+	}
+}
+
+// TestAuditLiveVersionOnlyReportsNotListedForEmptyReleaseInfo pins the weak
+// listing inference: an empty releaseInfo (no versionName, no versionCode)
+// means the app has never been released, so listing is not_listed — while
+// State still stays empty since this path never claims a review outcome.
+func TestAuditLiveVersionOnlyReportsNotListedForEmptyReleaseInfo(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"code":0,"data":{"releaseInfo":{}}}`)
+	}))
+	defer srv.Close()
+
+	s := &Store{client: resty.New().SetBaseURL(srv.URL).SetHeader("Content-Type", "application/json")}
+	var res store.AuditResult
+	auditLiveVersionOnly(context.Background(), s, "123", &res)
+	if res.State != "" || res.Listing != store.ListingNotListed || res.Error != "" {
+		t.Fatalf("result = %+v, want empty state + not_listed + no error", res)
+	}
+}
+
+// TestAuditLiveVersionOnlyDegradesListingOnFailure pins that an HTTP failure
+// while fetching get-app-detail degrades Listing to unknown (never guesses
+// on_shelf/not_listed from missing data) and surfaces the failure as Error.
+func TestAuditLiveVersionOnlyDegradesListingOnFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "temporary failure", http.StatusBadGateway)
+	}))
+	defer srv.Close()
+
+	s := &Store{client: resty.New().SetBaseURL(srv.URL).SetHeader("Content-Type", "application/json")}
+	var res store.AuditResult
+	auditLiveVersionOnly(context.Background(), s, "123", &res)
+	if res.Listing != store.ListingUnknown || res.Error == "" {
+		t.Fatalf("result = %+v, want unknown listing with error", res)
+	}
 }
 
 // TestSubmitAuditReturnsReleaseID pins that submit-audit's bare-string
