@@ -78,6 +78,7 @@ func audit(ctx context.Context, cfg map[string]string, q store.AuditQuery) store
 		// Listing enrichment is best-effort; a live-version failure must not hide
 		// the exact submission result from get-audit-result.
 		auditByRelease(ctx, s, appID, q.ExternalID, &res)
+		res.State = applyHonorFirstListing(res.State, res.Listing)
 		return res
 	}
 	if liveErr != nil {
@@ -228,6 +229,16 @@ func mapHonorAudit(auditResult int, msg string) (store.AuditState, string) {
 	default:
 		return store.AuditUnknown, fmt.Sprintf("auditResult=%d", auditResult)
 	}
+}
+
+// applyHonorFirstListing refines approved state to approved_first when the
+// app is confirmed not yet on shelf — honor's first-time shelf signal.
+// Only applies to approved state with not_listed; other combinations pass through.
+func applyHonorFirstListing(state store.AuditState, listing store.ListingState) store.AuditState {
+	if state == store.AuditApproved && listing == store.ListingNotListed {
+		return store.AuditApprovedFirst
+	}
+	return state
 }
 
 // honorResp is honor's standard response envelope. Code 0 = success.

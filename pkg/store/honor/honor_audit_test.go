@@ -155,3 +155,22 @@ func TestSubmitAuditReturnsReleaseID(t *testing.T) {
 		t.Fatalf("releaseID = %q, want rel-42", releaseID)
 	}
 }
+
+func TestApplyHonorFirstListing(t *testing.T) {
+	cases := []struct {
+		state   store.AuditState
+		listing store.ListingState
+		want    store.AuditState
+	}{
+		{store.AuditApproved, store.ListingNotListed, store.AuditApprovedFirst},
+		{store.AuditApproved, store.ListingOnShelf, store.AuditApproved},
+		{store.AuditApproved, store.ListingUnknown, store.AuditApproved},
+		{store.AuditReviewing, store.ListingNotListed, store.AuditReviewing},
+		{store.AuditRejected, store.ListingNotListed, store.AuditRejected},
+	}
+	for _, tc := range cases {
+		if got := applyHonorFirstListing(tc.state, tc.listing); got != tc.want {
+			t.Errorf("applyHonorFirstListing(%q, %q) = %q, want %q", tc.state, tc.listing, got, tc.want)
+		}
+	}
+}
