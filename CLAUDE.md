@@ -43,15 +43,21 @@ is on shelf. `listing` is orthogonal to `state`: `on_shelf` (在架),
 `off_shelf` (下架), `not_listed` (未上架), `unknown`. The text renderer shows
 this as a leading column before the review state; JSON output already includes
 the `listing` field through `AuditStoreResult`.
-Listing precision varies by store: Huawei can identify listing precisely;
-OPPO infers it from keywords; Xiaomi can only distinguish on-shelf vs
-not-listed and cannot recognize off-shelf; Tencent uses its public detail page
-as a best-effort signal, so scrape failures degrade to `unknown` rather than
-inventing `not_listed`; Honor has no listing API and is reported as `unknown`;
-vivo is treated conservatively and depends on whether the available fields can
-be verified.
+Listing precision varies by store: Huawei reports all three states directly;
+vivo maps `saleStatus` 0/1/2 to not-listed/on-shelf/off-shelf; OPPO prefers
+`audit_status` 0/111/222 and falls back to conservative label matching; Samsung
+maps direct content states and uses a SALE probe for approved versions; Honor
+weakly distinguishes not-listed/on-shelf from empty/non-empty `releaseInfo` but
+cannot identify off-shelf. Xiaomi only distinguishes on-shelf vs not-listed,
+and Tencent uses its public detail page as a best-effort three-state signal.
+Missing fields, unexpected values, and probe/scrape failures degrade to
+`unknown` rather than inventing a business state.
 
-Tencent only emits `approved_first` when `listing=not_listed`.
+`needs_fix` is currently produced by OPPO (整改/冻结 labels) and Samsung
+(`SUSPENDED` / `*_SUSPENDED`) and remains non-terminal for `--watch`.
+`approved_first` is currently supported by Huawei, Tencent, Honor, vivo, and
+Samsung. Honor only emits it for a releaseId-scoped review result; without a
+releaseId it reports live version/listing only and leaves review `state` empty.
 
 ## Upload flags
 
